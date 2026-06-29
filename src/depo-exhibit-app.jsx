@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-
+import SessionPanel from "./depodesk-session-panel"
+import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked } from "./depodesk-supabase"
+import { supabase } from "./depodesk-supabase"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 const STORAGE_KEY = "depodesk-cases-v2";
 const ANN_KEY     = "depodesk-annotations-v1";
@@ -515,6 +517,7 @@ export default function App() {
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
   const [saveStatus, setSaveStatus]     = useState("idle");
+  const [activeSession, setActiveSession] = useState(null);
   const saveTimer = useRef(null);
   const fileInputRef   = useRef();
   const attachInputRef = useRef();
@@ -677,12 +680,22 @@ export default function App() {
     setShowImportModal(false);
   }
 
-  function shareExhibit(id) {
-    setSharedId(id);
-    const ex = exhibits.find(e => e.id === id);
+async function shareExhibit(id) {
+  setSharedId(id);
+  const ex = exhibits.find(e => e.id === id);
+  notify(`${ex?.label || ex?.name} shared with all participants`);
+
+  if (activeSession) {
+    const channel = supabase.channel(`session:${activeSession.id}`);
+    await channel.send({
+      type: "broadcast",
+      event: "exhibit_push",
+      payload: { exhibit: { ...ex, caseName: activeCase?.name } },
+    });
+  } else {
     CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: { ...ex, caseName: activeCase?.name } });
-    notify(`${ex.label} shared with all participants`);
   }
+}
 
   function stopSharing() { setSharedId(null); CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: null }); }
 
@@ -828,6 +841,23 @@ export default function App() {
           {!isLibrary && activeDepo && (
             <button onClick={() => setShowImportModal(true)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>⬇ Import from Library</button>
           )}
+          <button onClick={async () => {
+  if (activeSession) return;
+  try {
+    const sess = await startSessionWithPin(activeCaseId, activeDepoId);
+    setActiveSession(sess);
+  } catch (err) {
+    alert("Error starting session: " + err.message);
+  }
+}} style={{
+  background: activeSession ? "#0D2D1A" : "#4CAF82",
+  color: activeSession ? "#4CAF82" : "#0F1B2D",
+  border: activeSession ? "1px solid #2A5C3A" : "none",
+  borderRadius: 6, padding: "5px 12px", fontSize: 12,
+  fontWeight: 600, cursor: "pointer",
+}}>
+  {activeSession ? `● Live · PIN ${activeSession.pin}` : "Start Session"}
+</button>
           <button onClick={() => setShowWitnessModal(true)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>👁 Witness</button>
           <button onClick={() => setShowAddExhibit(true)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Exhibit</button>
         </div>
@@ -1105,6 +1135,21 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: #1E3254; border-radius: 2px; }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
         select option { background: #0F1B2D; }
+      {activeSession && (
+  <SessionPanel
+    session={activeSession}
+    onEndSession={async () => {
+      await endSessionAndNotify(activeSession.id);
+      setActiveSession(null);
+    }}
+    onTransferControl={async () => {
+      const newRole = activeSession.controller_role === "host" ? "opposing_counsel" : "host";
+      const updated = await transferControl(activeSession.id, newRole);
+      setActiveSession(prev => ({ ...prev, controller_role: updated.controller_role }));
+    }}
+    onUpdateRole={() => {}}
+  />
+)}
       `}</style>
     </div>
   );

@@ -534,3 +534,166 @@ export function useExhibits(caseId) {
 
   return { exhibits, addExhibit, markExhibitInRecord, attachFile, removeExhibit, loading, error };
 }
+
+// ============================================================
+// DepoDesk v2 — Session Functions
+// Add these to depodesk-supabase.js
+// ============================================================
+
+/**
+ * Start a deposition session with a PIN.
+ * Returns the session including the generated PIN.
+ */
+export async function startSessionWithPin(caseId, depositionId) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not logged in");
+
+  // End any existing active sessions for this case
+  await supabase
+    .from("sessions")
+    .update({ is_active: false, ended_at: new Date().toISOString() })
+    .eq("case_id", caseId)
+    .eq("is_active", true);
+
+  // Generate a unique PIN via the DB function
+  const { data: pinData } = await supabase.rpc("generate_session_pin");
+  const pin = pinData;
+
+  const { data, error } = await supabase
+  .from("sessions")
+  .insert({
+    host_id: user.id,
+    pin,
+    controller_id: user.id,
+    controller_role: "host",
+  })
+  .select()
+  .single();
+  if (error) throw error;
+  return data;
+}
+
+
+/**
+ * Transfer exhibit control to opposing counsel.
+ */
+export async function transferControl(sessionId, toRole) {
+  const { data, error } = await supabase
+    .from("sessions")
+    .update({ controller_role: toRole })
+    .eq("id", sessionId)
+    .select()
+    .single();
+  if (error) throw error;
+
+  // Log the event
+  await supabase.from("session_events").insert({
+    session_id: sessionId,
+    event_type: "control_transferred",
+    actor_role: toRole,
+    notes: toRole === "host" ? "Control returned to counsel" : "Control transferred to opposing counsel",
+  });
+
+  // Broadcast to all participants
+  await supabase.channel(`session:${sessionId}`).send({
+    type: "broadcast",
+    event: "control_transferred",
+    payload: { controller_role: toRole },
+  });
+
+  return data;
+}
+
+/**
+ * Log and broadcast an exhibit being shared.
+ */
+export async function broadcastExhibit(sessionId, exhibit, actorName) {
+  // Broadcast to witness/opposing counsel views
+  await supabase.channel(`session:${sessionId}`).send({
+    type: "broadcast",
+    event: "exhibit_push",
+    payload: { exhibit },
+  });
+
+  // Log the event
+  await supabase.from("session_events").insert({
+    session_id: sessionId,
+    event_type: "exhibit_shared",
+    exhibit_id: exhibit.id,
+    exhibit_name: exhibit.name,
+    exhibit_num: exhibit.exhibitNum || null,
+    actor_name: actorName,
+    actor_role: "host",
+  });
+
+  // Broadcast to court reporter
+  const { data: event } = await supabase
+    .from("session_events")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  await supabase.channel(`reporter:${sessionId}`).send({
+    type: "broadcast",
+    event: "session_event",
+    payload: { event },
+  });
+}
+
+/**
+ * Log and broadcast an exhibit being marked into the record.
+ */
+export async function broadcastExhibitMarked(sessionId, exhibit, actorName) {
+  const { data: event } = await supabase
+    .from("session_events")
+    .insert({
+      session_id: sessionId,
+      event_type: "exhibit_marked",
+      exhibit_id: exhibit.id,
+      exhibit_name: exhibit.name,
+      exhibit_num: exhibit.exhibitNum,
+      actor_name: actorName,
+      actor_role: "host",
+    })
+    .select()
+    .single();
+
+  // Broadcast marked exhibit to opposing counsel log
+  await supabase.channel(`session:${sessionId}`).send({
+    type: "broadcast",
+    event: "exhibit_marked",
+    payload: { event },
+  });
+
+  // Broadcast to court reporter
+  await supabase.channel(`reporter:${sessionId}`).send({
+    type: "broadcast",
+    event: "session_event",
+    payload: { event },
+  });
+}
+
+/**
+ * End a session and notify all participants.
+ */
+export async function endSessionAndNotify(sessionId) {
+  // Broadcast end to all views
+  await supabase.channel(`session:${sessionId}`).send({
+    type: "broadcast",
+    event: "session_ended",
+    payload: {},
+  });
+  await supabase.channel(`reporter:${sessionId}`).send({
+    type: "broadcast",
+    event: "session_ended",
+    payload: {},
+  });
+
+  // Mark session as ended
+  await supabase
+    .from("sessions")
+    .update({ is_active: false, ended_at: new Date().toISOString() })
+    .eq("id", sessionId);
+}

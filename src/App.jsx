@@ -1,17 +1,24 @@
 import { useAuth } from "./depodesk-supabase"
 import AuthScreen from "./depodesk-auth"
 import DepoDesk from "./depo-exhibit-app"
+import JoinPage from "./depodesk-join"
+import WitnessView from "./depodesk-witness"
+import OpposingCounselView from "./depodesk-opposing-counsel"
+import CourtReporterView from "./depodesk-court-reporter"
 
-// Witness View route — if URL contains /witness, show witness page
 function Router() {
-  const isWitness = window.location.pathname === "/witness"
-  const { user, loading } = useAuth()
+  const path = window.location.pathname
 
-  if (isWitness) {
-    // Dynamically import to avoid loading Supabase auth for witnesses
-    const WitnessView = require("./depodesk-witness").default
-    return <WitnessView />
-  }
+  if (path === "/join")             return <JoinPage />
+  if (path === "/witness")          return <WitnessView />
+  if (path === "/opposing-counsel") return <OpposingCounselView />
+  if (path === "/court-reporter")   return <CourtReporterView />
+
+  return <AuthedApp />
+}
+
+function AuthedApp() {
+  const { user, loading } = useAuth()
 
   if (loading) return (
     <div style={{
