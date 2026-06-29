@@ -831,7 +831,7 @@ async function shareExhibit(id) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {saveStatus === "saved" && <span style={{ fontSize: 10, color: "#4CAF82" }}>✓ Saved</span>}
+          {saveStatus === "saved" && <span style={{ fontSize: 10, color: "#4CAF82" }}>✓ Saved </span>}
           {sharedId && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#0D2D1A", border: "1px solid #2A5C3A", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#4CAF82" }}>
               <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#4CAF82", animation: "pulse 1.5s infinite" }} />
