@@ -284,18 +284,7 @@ function WitnessView({ sharedExhibit }) {
               {sharedExhibit.fileUrl ? (
                 sharedExhibit.type === "Image"
                   ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}><img src={sharedExhibit.fileUrl} alt={sharedExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                 {activeExhibit.type === "Image" ? (
-  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-    <img src={activeExhibit.fileUrl} alt={activeExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-  </div>
-) : (
-  <PDFViewer
-    url={activeExhibit.fileUrl}
-    mode="host"
-    sessionId={activeSession?.id}
-    exhibitId={activeExhibit.id}
-  />
-)}
+                  : <iframe src={sharedExhibit.fileUrl} title={sharedExhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ border: "2px solid #C9A84C", borderRadius: 6, padding: "16px 32px", textAlign: "center" }}>
@@ -1016,7 +1005,7 @@ async function shareExhibit(id) {
                   <div style={{ width: "100%", height: "100%", position: "relative" }}>
                     {activeExhibit.type === "Image"
                       ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={activeExhibit.fileUrl} alt={activeExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                      : <iframe src={activeExhibit.fileUrl} title={activeExhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                     : <PDFViewer url={activeExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={activeExhibit.id} />
                     }
                     {showAnnotations && <AnnotationLayer exhibitId={activeExhibit.id} tool={annTool} color={annColor} annotations={annotations} setAnnotations={setAnnotations} />}
                   </div>
