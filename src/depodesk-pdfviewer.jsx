@@ -29,7 +29,7 @@ import { supabase } from "./depodesk-supabase";
 
 // Point PDF.js at its worker (copy from node_modules or use CDN)
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.mjs";
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.mjs";
 
 const GOLD  = "#C9A84C";
 const NAVY  = "#0F1B2D";

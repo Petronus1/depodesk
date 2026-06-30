@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
 import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked } from "./depodesk-supabase"
 import { supabase } from "./depodesk-supabase"
+import PDFViewer from "./depodesk-pdfviewer"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 const STORAGE_KEY = "depodesk-cases-v2";
 const ANN_KEY     = "depodesk-annotations-v1";
@@ -283,7 +284,18 @@ function WitnessView({ sharedExhibit }) {
               {sharedExhibit.fileUrl ? (
                 sharedExhibit.type === "Image"
                   ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}><img src={sharedExhibit.fileUrl} alt={sharedExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                  : <iframe src={sharedExhibit.fileUrl} title={sharedExhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                 {activeExhibit.type === "Image" ? (
+  <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <img src={activeExhibit.fileUrl} alt={activeExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+  </div>
+) : (
+  <PDFViewer
+    url={activeExhibit.fileUrl}
+    mode="host"
+    sessionId={activeSession?.id}
+    exhibitId={activeExhibit.id}
+  />
+)}
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ border: "2px solid #C9A84C", borderRadius: 6, padding: "16px 32px", textAlign: "center" }}>
