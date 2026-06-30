@@ -841,23 +841,25 @@ async function shareExhibit(id) {
           {!isLibrary && activeDepo && (
             <button onClick={() => setShowImportModal(true)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>⬇ Import from Library</button>
           )}
-          <button onClick={async () => {
-  if (activeSession) return;
-  try {
-    const sess = await startSessionWithPin(activeCaseId, activeDepoId);
-    setActiveSession(sess);
-  } catch (err) {
-    alert("Error starting session: " + err.message);
-  }
-}} style={{
-  background: activeSession ? "#0D2D1A" : "#4CAF82",
-  color: activeSession ? "#4CAF82" : "#0F1B2D",
-  border: activeSession ? "1px solid #2A5C3A" : "none",
-  borderRadius: 6, padding: "5px 12px", fontSize: 12,
-  fontWeight: 600, cursor: "pointer",
-}}>
-  {activeSession ? `● Live · PIN ${activeSession.pin}` : "▶ Start Session"}
-</button>
+          {!isLibrary && activeDepo && (
+            <button onClick={async () => {
+              if (activeSession) return;
+              try {
+                const sess = await startSessionWithPin(activeCaseId, activeDepoId);
+                setActiveSession(sess);
+              } catch (err) {
+                alert("Error starting session: " + err.message);
+              }
+            }} style={{
+              background: activeSession ? "#0D2D1A" : "#4CAF82",
+              color: activeSession ? "#4CAF82" : "#0F1B2D",
+              border: activeSession ? "1px solid #2A5C3A" : "none",
+              borderRadius: 6, padding: "5px 12px", fontSize: 12,
+              fontWeight: 600, cursor: "pointer",
+            }}>
+              {activeSession ? `● Live · PIN ${activeSession.pin}` : "▶ Start Session"}
+            </button>
+          )}
           <button onClick={() => setShowWitnessModal(true)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>👁 Witness</button>
           <button onClick={() => setShowAddExhibit(true)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Exhibit</button>
         </div>
