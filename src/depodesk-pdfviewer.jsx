@@ -122,14 +122,18 @@ export default function PDFViewer({
   const isWitness  = mode === "witness";
 
   // ── Load PDF ──────────────────────────────────────────────
-  useEffect(() => {
-    if (!url) return;
-    setLoading(true); setError(null); setPdfDoc(null);
-    pdfjsLib.getDocument(url).promise
-      .then(doc => { setPdfDoc(doc); setNumPages(doc.numPages); setCurrentPage(1); })
-      .catch(() => setError("Failed to load PDF. The file may be unavailable."))
-      .finally(() => setLoading(false));
-  }, [url]);
+ useEffect(() => {
+  if (!url) return;
+  console.log("PDFViewer loading URL:", url);
+  setLoading(true); setError(null); setPdfDoc(null);
+  pdfjsLib.getDocument(url).promise
+    .then(doc => { setPdfDoc(doc); setNumPages(doc.numPages); setCurrentPage(1); })
+    .catch(err => {
+      console.error("PDF.js load error:", err);
+      setError("Failed to load PDF. The file may be unavailable.");
+    })
+    .finally(() => setLoading(false));
+}, [url]);
 
   // ── Scroll to page ────────────────────────────────────────
   const scrollToPage = useCallback((page) => {
