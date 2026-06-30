@@ -25,11 +25,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "./depodesk-supabase";
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
 // Point PDF.js at its worker (copy from node_modules or use CDN)
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.1.200/pdf.worker.min.mjs";
+
 
 const GOLD  = "#C9A84C";
 const NAVY  = "#0F1B2D";
