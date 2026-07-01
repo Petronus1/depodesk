@@ -507,7 +507,6 @@ export default function App() {
   const [sharedId, setSharedId]         = useSharedState(null);
   const [showAddExhibit, setShowAddExhibit] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showWitnessModal, setShowWitnessModal] = useState(false);
   const [newExhibit, setNewExhibit]     = useState({ name: "", type: "PDF", date: "", tags: "" });
   const [notification, setNotification] = useState(null);
   const [dragOver, setDragOver]         = useState(false);
@@ -802,7 +801,6 @@ async function shareExhibit(id) {
   }, [activeExhibitId, exhibits]);
 
   const hasAnnotations = activeExhibitId && ((annotations[activeExhibitId]?.strokes?.length || 0) + (annotations[activeExhibitId]?.notes?.length || 0)) > 0;
-  const witnessUrl = window.location.href.split("#")[0] + "#witness";
 
   const inputStyle = { width: "100%", background: "#0A1628", border: "1px solid #1E3254", borderRadius: 6, padding: "8px 12px", color: "#E8EDF5", fontSize: 13, outline: "none", boxSizing: "border-box" };
 
@@ -863,7 +861,15 @@ async function shareExhibit(id) {
               {activeSession ? `● Live · PIN ${activeSession.pin}` : "▶ Start Session"}
             </button>
           )}
-          <button onClick={() => setShowWitnessModal(true)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>👁 Witness</button>
+          {activeSession && (
+            <button onClick={() => {
+              const joinUrl = `${window.location.origin}/join?pin=${activeSession.pin}`;
+              navigator.clipboard?.writeText(joinUrl);
+              notify("Join link copied!", "#4CAF82");
+            }} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>
+              ⎘ Share Join Link
+            </button>
+          )}
           <button onClick={() => setShowAddExhibit(true)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Exhibit</button>
         </div>
       </div>
@@ -1075,21 +1081,6 @@ async function shareExhibit(id) {
         </div>
       )}
 
-      {/* Witness Modal */}
-      {showWitnessModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
-          <div style={{ background: "#0F1B2D", border: "1px solid #1E3254", borderRadius: 10, padding: 26, width: 440, boxShadow: "0 20px 60px rgba(0,0,0,0.6)" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Witness View</div>
-            <div style={{ fontSize: 12, color: "#7A93B8", marginBottom: 18 }}>Share this link with participants. They'll see exhibits the moment you push them.</div>
-            <div style={{ background: "#0A1628", border: "1px solid #1E3254", borderRadius: 6, padding: "9px 12px", fontSize: 11, color: "#C9A84C", fontFamily: "monospace", wordBreak: "break-all", marginBottom: 14 }}>{witnessUrl}</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { navigator.clipboard?.writeText(witnessUrl); notify("Link copied!"); setShowWitnessModal(false); }} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", flex: 1 }}>Copy Link</button>
-              <button onClick={() => { window.open(witnessUrl, "_blank"); setShowWitnessModal(false); }} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Preview →</button>
-              <button onClick={() => setShowWitnessModal(false)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add Exhibit Modal */}
       {showAddExhibit && (
