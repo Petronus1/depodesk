@@ -594,16 +594,23 @@ export default function App() {
 
   useEffect(() => {
     if (!activeSession) { setParticipants([]); return; }
-    // Fetch existing participants
-    supabase.from("participants").select("*").eq("session_id", activeSession.id)
-      .then(({ data }) => { if (data) setParticipants(data); });
-    // Subscribe to new joins
+    async function fetchParticipants() {
+      const { data } = await supabase.from("participants").select("*").eq("session_id", activeSession.id);
+      if (data) setParticipants(data);
+    }
+    fetchParticipants();
     const channel = supabase.channel(`participants:${activeSession.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "participants", filter: `session_id=eq.${activeSession.id}` },
-        ({ new: p }) => setParticipants(prev => [...prev, p]))
+        () => fetchParticipants())
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [activeSession?.id]);
+
+  async function refreshParticipants() {
+    if (!activeSession) return;
+    const { data } = await supabase.from("participants").select("*").eq("session_id", activeSession.id);
+    if (data) setParticipants(data);
+  }
 
   if (isWitness) return <WitnessView sharedExhibit={witnessExhibit} />;
 
@@ -887,7 +894,7 @@ async function shareExhibit(id) {
           )}
           {activeSession && (
             <div style={{ position: "relative" }}>
-              <button onClick={() => setShowParticipants(v => !v)} style={{
+              <button onClick={() => { setShowParticipants(v => !v); refreshParticipants(); }} style={{
                 background: showParticipants ? "#162540" : "transparent",
                 border: "1px solid #1E3254", color: "#7A93B8",
                 borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
