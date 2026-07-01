@@ -17,14 +17,30 @@ export default function WitnessView() {
   const [flash, setFlash]           = useState(false);
   const unsubRef                    = useRef(null);
 
-  const sessionId = sessionStorage.getItem("depo_session_id");
-  const name      = sessionStorage.getItem("depo_participant_name");
+  const sessionId     = sessionStorage.getItem("depo_session_id");
+  const participantId = sessionStorage.getItem("depo_participant_id");
+  const name          = sessionStorage.getItem("depo_participant_name");
 
   useEffect(() => {
     if (!sessionId) { setStatus("error"); return; }
 
     async function connect() {
       try {
+        // Wait for host approval before joining the session channel
+        const { data: participant } = await supabase
+          .from("participants").select("status").eq("id", participantId).single();
+        if (participant?.status === "rejected") { setStatus("rejected"); return; }
+        if (participant?.status !== "approved") {
+          // Poll until approved or rejected
+          const poll = setInterval(async () => {
+            const { data: p } = await supabase
+              .from("participants").select("status").eq("id", participantId).single();
+            if (p?.status === "approved") { clearInterval(poll); connect(); }
+            if (p?.status === "rejected") { clearInterval(poll); setStatus("rejected"); }
+          }, 3000);
+          return;
+        }
+
         const { data: sess } = await supabase
           .from("sessions")
           .select("*, cases(name, number)")
@@ -65,6 +81,19 @@ export default function WitnessView() {
           <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
           <div style={{ fontSize: 16, fontWeight: 600, color: MUTED }}>Session not found</div>
           <div style={{ fontSize: 13, color: DIM, marginTop: 6 }}>Please use the join link provided by counsel.</div>
+          <a href="/join" style={{ display: "inline-block", marginTop: 16, color: GOLD, fontSize: 13 }}>← Back to Join</a>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#E8EDF5" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🚫</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#F87171" }}>Entry Declined</div>
+          <div style={{ fontSize: 13, color: DIM, marginTop: 6 }}>Counsel has declined your request to join.</div>
           <a href="/join" style={{ display: "inline-block", marginTop: 16, color: GOLD, fontSize: 13 }}>← Back to Join</a>
         </div>
       </div>

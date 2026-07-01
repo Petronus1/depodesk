@@ -170,19 +170,10 @@ function DetailsStep({ session, onJoined }) {
     try {
       const { data, error } = await supabase
         .from("participants")
-        .insert({ session_id: session.id, name: name.trim(), email: email.trim() || null, role })
+        .insert({ session_id: session.id, name: name.trim(), email: email.trim() || null, role, status: "pending" })
         .select()
         .single();
       if (error) throw error;
-
-      // Log the join event
-      await supabase.from("session_events").insert({
-        session_id: session.id,
-        event_type: "participant_joined",
-        actor_name: name.trim(),
-        actor_role: role,
-      });
-
       onJoined({ ...data, session });
     } catch (err) {
       setError(err.message || "Failed to join. Please try again.");
@@ -254,46 +245,64 @@ function DetailsStep({ session, onJoined }) {
   );
 }
 
-// ── Joined — redirect to role view ────────────────────────────
+// ── Joined — wait for host approval ───────────────────────────
 function JoinedScreen({ participant }) {
-  const viewMap = {
-    witness: "/witness",
-    opposing_counsel: "/opposing-counsel",
-    court_reporter: "/court-reporter",
-  };
+  const [status, setStatus] = useState("pending");
+
+  const viewMap = { witness: "/witness", opposing_counsel: "/opposing-counsel", court_reporter: "/court-reporter" };
+  const roleLabels = { witness: "Witness", opposing_counsel: "Opposing Counsel", court_reporter: "Court Reporter" };
 
   useEffect(() => {
-    const path = viewMap[participant.role];
-    const sessionId = participant.session.id;
-    const participantId = participant.id;
-    // Store in sessionStorage so the view page can access it
-    sessionStorage.setItem("depo_session_id", sessionId);
+    sessionStorage.setItem("depo_session_id", participant.session.id);
     sessionStorage.setItem("depo_pin", participant.session.pin);
-    sessionStorage.setItem("depo_participant_id", participantId);
+    sessionStorage.setItem("depo_participant_id", participant.id);
     sessionStorage.setItem("depo_participant_name", participant.name);
     sessionStorage.setItem("depo_participant_role", participant.role);
-    // Redirect after brief delay
-    setTimeout(() => { window.location.href = path; }, 1500);
+
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("participants").select("status").eq("id", participant.id).single();
+      if (data?.status === "approved") {
+        clearInterval(interval);
+        setStatus("approved");
+        setTimeout(() => { window.location.href = viewMap[participant.role]; }, 1000);
+      } else if (data?.status === "rejected") {
+        clearInterval(interval);
+        setStatus("rejected");
+      }
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
-  const roleLabels = {
-    witness: "Witness View",
-    opposing_counsel: "Opposing Counsel View",
-    court_reporter: "Court Reporter View",
-  };
+  if (status === "rejected") return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 40, marginBottom: 16 }}>🚫</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#F87171", marginBottom: 8 }}>Entry Declined</div>
+      <div style={{ fontSize: 13, color: MUTED }}>Counsel has declined your request to join.</div>
+      <a href="/join" style={{ display: "inline-block", marginTop: 16, color: GOLD, fontSize: 13 }}>← Try again</a>
+    </div>
+  );
+
+  if (status === "approved") return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 40, marginBottom: 16 }}>✅</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#E8EDF5", marginBottom: 8 }}>Approved!</div>
+      <div style={{ fontSize: 13, color: GREEN }}>Entering session…</div>
+    </div>
+  );
 
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 40, marginBottom: 16 }}>✅</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: "#E8EDF5", marginBottom: 8 }}>
-        Welcome, {participant.name}
+      <div style={{ fontSize: 36, marginBottom: 16, animation: "breathe 2s ease-in-out infinite" }}>⏳</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#E8EDF5", marginBottom: 8 }}>
+        Waiting for approval
       </div>
       <div style={{ fontSize: 13, color: MUTED, marginBottom: 20 }}>
-        Joining as {roleLabels[participant.role]}…
+        {participant.name} · {roleLabels[participant.role]}
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        <div style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, animation: "pulse 1.5s infinite" }} />
-        <span style={{ fontSize: 12, color: GREEN }}>Connecting to session</span>
+        <div style={{ width: 7, height: 7, borderRadius: "50%", background: GOLD, animation: "pulse 1.5s infinite" }} />
+        <span style={{ fontSize: 12, color: GOLD }}>Waiting for counsel to admit you</span>
       </div>
     </div>
   );

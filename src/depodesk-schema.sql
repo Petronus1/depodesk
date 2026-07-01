@@ -228,6 +228,46 @@ create trigger set_exhibits_updated_at
   for each row execute procedure public.set_updated_at();
 
 
+-- ── 9. PARTICIPANTS ──────────────────────────────────────────
+-- Run this migration if the participants table already exists:
+--
+--   alter table public.participants
+--   add column if not exists status text default 'pending'
+--     check (status in ('pending', 'approved', 'rejected'));
+--
+-- Or create fresh:
+
+create table if not exists public.participants (
+  id           uuid default gen_random_uuid() primary key,
+  session_id   uuid references public.sessions(id) on delete cascade not null,
+  name         text not null,
+  email        text,
+  role         text not null check (role in ('witness', 'opposing_counsel', 'court_reporter')),
+  status       text default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  joined_at    timestamptz default now()
+);
+
+alter table public.participants enable row level security;
+
+-- Anyone can insert (join request); host can read/update all
+create policy "Anyone can request to join a session"
+  on public.participants for insert
+  with check (true);
+
+create policy "Host can manage participants"
+  on public.participants for all
+  using (
+    exists (
+      select 1 from public.sessions
+      where id = session_id and host_id = auth.uid()
+    )
+  );
+
+create policy "Participants can read their own record"
+  on public.participants for select
+  using (true);
+
+
 -- ── DONE ─────────────────────────────────────────────────────
 -- Tables created:
 --   profiles       → attorney accounts

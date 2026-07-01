@@ -599,8 +599,8 @@ export default function App() {
       const { data } = await supabase.from("participants").select("*").eq("session_id", activeSession.id);
       if (!data) return;
       setParticipants(prev => {
-        const newOnes = data.filter(p => !prev.find(x => x.id === p.id));
-        newOnes.forEach(p => notify(`${p.name} joined as ${roleLabels[p.role] || p.role}`, "#4CAF82"));
+        const newPending = data.filter(p => p.status === "pending" && !prev.find(x => x.id === p.id));
+        if (newPending.length > 0) notify(`${newPending[0].name} is requesting to join as ${roleLabels[newPending[0].role] || newPending[0].role}`, "#C9A84C");
         return data;
       });
     }
@@ -613,6 +613,21 @@ export default function App() {
     if (!activeSession) return;
     const { data } = await supabase.from("participants").select("*").eq("session_id", activeSession.id);
     if (data) setParticipants(data);
+  }
+
+  async function approveParticipant(id) {
+    await supabase.from("participants").update({ status: "approved" }).eq("id", id);
+    setParticipants(prev => prev.map(p => p.id === id ? { ...p, status: "approved" } : p));
+  }
+
+  async function rejectParticipant(id) {
+    await supabase.from("participants").update({ status: "rejected" }).eq("id", id);
+    setParticipants(prev => prev.map(p => p.id === id ? { ...p, status: "rejected" } : p));
+  }
+
+  async function changeParticipantRole(id, role) {
+    await supabase.from("participants").update({ role }).eq("id", id);
+    setParticipants(prev => prev.map(p => p.id === id ? { ...p, role } : p));
   }
 
   if (isWitness) return <WitnessView sharedExhibit={witnessExhibit} />;
@@ -895,50 +910,79 @@ async function shareExhibit(id) {
               ⎘ Share Join Link
             </button>
           )}
-          {activeSession && (
-            <div style={{ position: "relative" }}>
-              <button onClick={() => { setShowParticipants(v => !v); refreshParticipants(); }} style={{
-                background: showParticipants ? "#162540" : "transparent",
-                border: "1px solid #1E3254", color: "#7A93B8",
-                borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
-              }}>
-                👥 {participants.length}
-              </button>
-              {showParticipants && (
-                <div style={{
-                  position: "absolute", top: "calc(100% + 6px)", right: 0,
-                  background: "#0F1B2D", border: "1px solid #1E3254", borderRadius: 8,
-                  minWidth: 220, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 200,
+          {activeSession && (() => {
+            const pending  = participants.filter(p => p.status === "pending");
+            const approved = participants.filter(p => p.status === "approved");
+            const roleLabels = { witness: "Witness", opposing_counsel: "Opp. Counsel", court_reporter: "Court Reporter" };
+            const roleColors = { witness: "#C9A84C", opposing_counsel: "#7EB3E8", court_reporter: "#C07EE8" };
+            const hasPending = pending.length > 0;
+            return (
+              <div style={{ position: "relative" }}>
+                <button onClick={() => { setShowParticipants(v => !v); refreshParticipants(); }} style={{
+                  background: hasPending ? "#1A1200" : showParticipants ? "#162540" : "transparent",
+                  border: `1px solid ${hasPending ? "#C9A84C" : "#1E3254"}`,
+                  color: hasPending ? "#C9A84C" : "#7A93B8",
+                  borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
                 }}>
-                  <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px" }}>
-                    Participants · {participants.length} joined
-                  </div>
-                  {participants.length === 0 ? (
-                    <div style={{ padding: "10px 14px 14px", fontSize: 12, color: "#2A3F58" }}>No one has joined yet.</div>
-                  ) : (
-                    participants.map(p => {
-                      const roleColors = { witness: "#C9A84C", opposing_counsel: "#7EB3E8", court_reporter: "#C07EE8" };
-                      const roleLabels = { witness: "Witness", opposing_counsel: "Opp. Counsel", court_reporter: "Court Reporter" };
-                      return (
-                        <div key={p.id} style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47", display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#162540", border: "1px solid #1E3254", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#7A93B8", flexShrink: 0 }}>
-                            {p.name?.[0]?.toUpperCase() || "?"}
+                  👥 {approved.length}{hasPending ? ` · ${pending.length} waiting` : ""}
+                </button>
+                {showParticipants && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 6px)", right: 0,
+                    background: "#0F1B2D", border: "1px solid #1E3254", borderRadius: 8,
+                    minWidth: 260, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 200,
+                  }}>
+                    {pending.length > 0 && <>
+                      <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#C9A84C", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px" }}>
+                        Waiting for Admission · {pending.length}
+                      </div>
+                      {pending.map(p => (
+                        <div key={p.id} style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#1A1200", border: "1px solid #C9A84C", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#C9A84C", flexShrink: 0 }}>
+                              {p.name?.[0]?.toUpperCase()}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: "#E8EDF5" }}>{p.name}</div>
+                              <div style={{ fontSize: 10, color: "#C9A84C" }}>{roleLabels[p.role]}</div>
+                            </div>
                           </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: "#C8D6E8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
-                            <div style={{ fontSize: 10, color: roleColors[p.role] || "#4A6080", marginTop: 1 }}>{roleLabels[p.role] || p.role}</div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => approveParticipant(p.id)} style={{ flex: 1, background: "#0D2D1A", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 5, padding: "4px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✓ Admit</button>
+                            <button onClick={() => rejectParticipant(p.id)} style={{ flex: 1, background: "#1A0A0A", border: "1px solid #5C1A1A", color: "#F87171", borderRadius: 5, padding: "4px", fontSize: 11, cursor: "pointer" }}>✕ Decline</button>
                           </div>
                         </div>
-                      );
-                    })
-                  )}
-                  <div style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47" }}>
-                    <button onClick={() => setShowParticipants(false)} style={{ width: "100%", background: "transparent", border: "1px solid #1A2D47", color: "#4A6080", borderRadius: 5, padding: "4px", fontSize: 11, cursor: "pointer" }}>Close</button>
+                      ))}
+                    </>}
+                    <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", borderTop: pending.length > 0 ? "1px solid #1E3254" : "none" }}>
+                      In Session · {approved.length}
+                    </div>
+                    {approved.length === 0
+                      ? <div style={{ padding: "6px 14px 12px", fontSize: 12, color: "#2A3F58" }}>No one admitted yet.</div>
+                      : approved.map(p => (
+                        <div key={p.id} style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47", display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#162540", border: "1px solid #1E3254", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#7A93B8", flexShrink: 0 }}>
+                            {p.name?.[0]?.toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "#C8D6E8" }}>{p.name}</div>
+                          </div>
+                          <select value={p.role} onChange={e => changeParticipantRole(p.id, e.target.value)} style={{ background: "#0A1628", border: "1px solid #1E3254", color: roleColors[p.role] || "#7A93B8", borderRadius: 4, padding: "2px 4px", fontSize: 10, cursor: "pointer", outline: "none" }}>
+                            <option value="witness">Witness</option>
+                            <option value="opposing_counsel">Opp. Counsel</option>
+                            <option value="court_reporter">Court Reporter</option>
+                          </select>
+                        </div>
+                      ))
+                    }
+                    <div style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47" }}>
+                      <button onClick={() => setShowParticipants(false)} style={{ width: "100%", background: "transparent", border: "1px solid #1A2D47", color: "#4A6080", borderRadius: 5, padding: "4px", fontSize: 11, cursor: "pointer" }}>Close</button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })()}
           <button onClick={() => setShowAddExhibit(true)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Exhibit</button>
         </div>
       </div>
