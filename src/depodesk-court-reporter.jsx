@@ -93,10 +93,6 @@ export default function CourtReporterView() {
     return () => clearInterval(interval);
   }, [status]);
 
-    connect();
-    return () => unsubRef.current?.();
-  }, [sessionId]);
-
   // Auto-scroll to bottom on new events
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
