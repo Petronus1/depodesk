@@ -519,6 +519,8 @@ export default function App() {
   const [saveStatus, setSaveStatus]     = useState("idle");
   const [activeSession, setActiveSession] = useState(null);
   const [panelsCollapsed, setPanelsCollapsed] = useState(false);
+  const [participants, setParticipants] = useState([]);
+  const [showParticipants, setShowParticipants] = useState(false);
   const saveTimer = useRef(null);
   const fileInputRef   = useRef();
   const attachInputRef = useRef();
@@ -589,6 +591,19 @@ export default function App() {
     }, 800);
     return () => clearTimeout(saveTimer.current);
   }, [cases, annotations, activeCaseId, activeDepoId, storageReady]);
+
+  useEffect(() => {
+    if (!activeSession) { setParticipants([]); return; }
+    // Fetch existing participants
+    supabase.from("participants").select("*").eq("session_id", activeSession.id)
+      .then(({ data }) => { if (data) setParticipants(data); });
+    // Subscribe to new joins
+    const channel = supabase.channel(`participants:${activeSession.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "participants", filter: `session_id=eq.${activeSession.id}` },
+        ({ new: p }) => setParticipants(prev => [...prev, p]))
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [activeSession?.id]);
 
   if (isWitness) return <WitnessView sharedExhibit={witnessExhibit} />;
 
@@ -869,6 +884,50 @@ async function shareExhibit(id) {
             }} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>
               ⎘ Share Join Link
             </button>
+          )}
+          {activeSession && (
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setShowParticipants(v => !v)} style={{
+                background: showParticipants ? "#162540" : "transparent",
+                border: "1px solid #1E3254", color: "#7A93B8",
+                borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer",
+              }}>
+                👥 {participants.length}
+              </button>
+              {showParticipants && (
+                <div style={{
+                  position: "absolute", top: "calc(100% + 6px)", right: 0,
+                  background: "#0F1B2D", border: "1px solid #1E3254", borderRadius: 8,
+                  minWidth: 220, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 200,
+                }}>
+                  <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px" }}>
+                    Participants · {participants.length} joined
+                  </div>
+                  {participants.length === 0 ? (
+                    <div style={{ padding: "10px 14px 14px", fontSize: 12, color: "#2A3F58" }}>No one has joined yet.</div>
+                  ) : (
+                    participants.map(p => {
+                      const roleColors = { witness: "#C9A84C", opposing_counsel: "#7EB3E8", court_reporter: "#C07EE8" };
+                      const roleLabels = { witness: "Witness", opposing_counsel: "Opp. Counsel", court_reporter: "Court Reporter" };
+                      return (
+                        <div key={p.id} style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47", display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#162540", border: "1px solid #1E3254", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#7A93B8", flexShrink: 0 }}>
+                            {p.name?.[0]?.toUpperCase() || "?"}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "#C8D6E8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                            <div style={{ fontSize: 10, color: roleColors[p.role] || "#4A6080", marginTop: 1 }}>{roleLabels[p.role] || p.role}</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div style={{ padding: "8px 14px", borderTop: "1px solid #1A2D47" }}>
+                    <button onClick={() => setShowParticipants(false)} style={{ width: "100%", background: "transparent", border: "1px solid #1A2D47", color: "#4A6080", borderRadius: 5, padding: "4px", fontSize: 11, cursor: "pointer" }}>Close</button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
           <button onClick={() => setShowAddExhibit(true)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Exhibit</button>
         </div>
