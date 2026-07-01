@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "./depodesk-supabase";
+import { supabase, getExhibitFileUrl } from "./depodesk-supabase";
 
 const GOLD  = "#C9A84C";
 const NAVY  = "#0F1B2D";
@@ -58,6 +58,11 @@ export default function WitnessView() {
             setTimeout(() => setFlash(false), 600);
             setExhibit(payload.exhibit);
             setStatus("live");
+            if (payload.exhibit.file_path) {
+              getExhibitFileUrl(payload.exhibit.file_path).then(setFileUrl).catch(() => setFileUrl(null));
+            } else {
+              setFileUrl(null);
+            }
           })
           .on("broadcast", { event: "session_ended" }, () => {
             setStatus("ended");
@@ -177,13 +182,19 @@ export default function WitnessView() {
               <div style={{ fontSize: 16, fontWeight: 600, color: MUTED }}>Deposition session ended</div>
             </div>
           ) : exhibit ? (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ border: `2px solid ${GOLD}`, borderRadius: 8, padding: "20px 40px", textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: GOLD, fontWeight: 800, letterSpacing: "2px" }}>EXHIBIT</div>
-                <div style={{ fontSize: 64, fontWeight: 900, color: GOLD, lineHeight: 1 }}>{exhibit.exhibitNum || "—"}</div>
-                <div style={{ fontSize: 14, color: MUTED, marginTop: 8 }}>{exhibit.name}</div>
+            fileUrl ? (
+              exhibit.type === "Image"
+                ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={fileUrl} alt={exhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
+                : <iframe src={fileUrl} title={exhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
+            ) : (
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ border: `2px solid ${GOLD}`, borderRadius: 8, padding: "20px 40px", textAlign: "center" }}>
+                  <div style={{ fontSize: 10, color: GOLD, fontWeight: 800, letterSpacing: "2px" }}>EXHIBIT</div>
+                  <div style={{ fontSize: 64, fontWeight: 900, color: GOLD, lineHeight: 1 }}>{exhibit.exhibitNum || "—"}</div>
+                  <div style={{ fontSize: 14, color: MUTED, marginTop: 8 }}>{exhibit.name}</div>
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
               <div style={{ width: 72, height: 72, border: `2px solid ${BORDER}`, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, animation: "breathe 3s ease-in-out infinite" }}>⚖️</div>
