@@ -74,6 +74,19 @@ export default function WitnessView() {
     return () => unsubRef.current?.();
   }, [sessionId]);
 
+  // Poll for role changes or being kicked after admission
+  useEffect(() => {
+    if (!participantId || status === "connecting" || status === "error" || status === "ended" || status === "rejected" || status === "removed") return;
+    const viewMap = { witness: "/witness", opposing_counsel: "/opposing-counsel", court_reporter: "/court-reporter" };
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from("participants").select("status, role").eq("id", participantId).single();
+      if (!data) return;
+      if (data.status === "rejected") { clearInterval(interval); setStatus("removed"); return; }
+      if (data.role !== "witness") { clearInterval(interval); window.location.href = viewMap[data.role]; }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [status]);
+
   if (!sessionId || status === "error") {
     return (
       <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#E8EDF5" }}>
@@ -82,6 +95,18 @@ export default function WitnessView() {
           <div style={{ fontSize: 16, fontWeight: 600, color: MUTED }}>Session not found</div>
           <div style={{ fontSize: 13, color: DIM, marginTop: 6 }}>Please use the join link provided by counsel.</div>
           <a href="/join" style={{ display: "inline-block", marginTop: 16, color: GOLD, fontSize: 13 }}>← Back to Join</a>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "removed") {
+    return (
+      <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#E8EDF5" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🚫</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#F87171" }}>Removed from Session</div>
+          <div style={{ fontSize: 13, color: DIM, marginTop: 6 }}>Counsel has removed you from the session.</div>
         </div>
       </div>
     );

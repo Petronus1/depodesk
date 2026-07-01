@@ -972,6 +972,7 @@ async function shareExhibit(id) {
                             <option value="opposing_counsel">Opp. Counsel</option>
                             <option value="court_reporter">Court Reporter</option>
                           </select>
+                          <button onClick={() => rejectParticipant(p.id)} title="Remove from session" style={{ background: "transparent", border: "none", color: "#4A6080", fontSize: 14, cursor: "pointer", padding: "0 2px", lineHeight: 1, flexShrink: 0 }}>✕</button>
                         </div>
                       ))
                     }

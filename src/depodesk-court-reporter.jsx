@@ -34,8 +34,9 @@ export default function CourtReporterView() {
   const logEndRef               = useRef(null);
   const unsubRef                = useRef(null);
 
-  const sessionId = sessionStorage.getItem("depo_session_id");
-  const name      = sessionStorage.getItem("depo_participant_name");
+  const sessionId     = sessionStorage.getItem("depo_session_id");
+  const participantId = sessionStorage.getItem("depo_participant_id");
+  const name          = sessionStorage.getItem("depo_participant_name");
 
   useEffect(() => {
     if (!sessionId) { setStatus("error"); return; }
@@ -75,6 +76,22 @@ export default function CourtReporterView() {
         setStatus("error");
       }
     }
+
+    connect();
+    return () => unsubRef.current?.();
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!participantId || status === "connecting" || status === "error" || status === "ended" || status === "removed") return;
+    const viewMap = { witness: "/witness", opposing_counsel: "/opposing-counsel", court_reporter: "/court-reporter" };
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from("participants").select("status, role").eq("id", participantId).single();
+      if (!data) return;
+      if (data.status === "rejected") { clearInterval(interval); setStatus("removed"); return; }
+      if (data.role !== "court_reporter") { clearInterval(interval); window.location.href = viewMap[data.role]; }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [status]);
 
     connect();
     return () => unsubRef.current?.();
