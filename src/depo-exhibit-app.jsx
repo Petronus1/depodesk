@@ -594,16 +594,19 @@ export default function App() {
 
   useEffect(() => {
     if (!activeSession) { setParticipants([]); return; }
-    async function fetchParticipants() {
+    const roleLabels = { witness: "Witness", opposing_counsel: "Opposing Counsel", court_reporter: "Court Reporter" };
+    async function fetchAndNotify() {
       const { data } = await supabase.from("participants").select("*").eq("session_id", activeSession.id);
-      if (data) setParticipants(data);
+      if (!data) return;
+      setParticipants(prev => {
+        const newOnes = data.filter(p => !prev.find(x => x.id === p.id));
+        newOnes.forEach(p => notify(`${p.name} joined as ${roleLabels[p.role] || p.role}`, "#4CAF82"));
+        return data;
+      });
     }
-    fetchParticipants();
-    const channel = supabase.channel(`participants:${activeSession.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "participants", filter: `session_id=eq.${activeSession.id}` },
-        () => fetchParticipants())
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    fetchAndNotify();
+    const interval = setInterval(fetchAndNotify, 8000);
+    return () => clearInterval(interval);
   }, [activeSession?.id]);
 
   async function refreshParticipants() {
