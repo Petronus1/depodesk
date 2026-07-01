@@ -124,9 +124,10 @@ export default function PDFViewer({
   // ── Load PDF ──────────────────────────────────────────────
  useEffect(() => {
   if (!url) return;
-  console.log("PDFViewer loading URL:", url);
   setLoading(true); setError(null); setPdfDoc(null);
-  pdfjsLib.getDocument(url).promise
+  fetch(url)
+    .then(r => r.arrayBuffer())
+    .then(data => pdfjsLib.getDocument({ data }).promise)
     .then(doc => { setPdfDoc(doc); setNumPages(doc.numPages); setCurrentPage(1); })
     .catch(err => {
       console.error("PDF.js load error:", err);
