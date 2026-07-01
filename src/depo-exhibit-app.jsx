@@ -519,6 +519,7 @@ export default function App() {
   const [storageReady, setStorageReady] = useState(false);
   const [saveStatus, setSaveStatus]     = useState("idle");
   const [activeSession, setActiveSession] = useState(null);
+  const [panelsCollapsed, setPanelsCollapsed] = useState(false);
   const saveTimer = useRef(null);
   const fileInputRef   = useRef();
   const attachInputRef = useRef();
@@ -832,6 +833,7 @@ async function shareExhibit(id) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => setPanelsCollapsed(v => !v)} title={panelsCollapsed ? "Show panels" : "Hide panels"} style={{ background: panelsCollapsed ? "#162540" : "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 10px", fontSize: 13, cursor: "pointer", lineHeight: 1 }}>{panelsCollapsed ? "▶▶" : "◀◀"}</button>
           {saveStatus === "saved" && <span style={{ fontSize: 10, color: "#4CAF82" }}>✓ Saved </span>}
           {sharedId && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#0D2D1A", border: "1px solid #2A5C3A", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#4CAF82" }}>
@@ -869,17 +871,17 @@ async function shareExhibit(id) {
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* Cases Panel */}
-        <div style={{ width: 200, flexShrink: 0, background: "#0C1624", borderRight: "1px solid #1A2D47", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ width: panelsCollapsed ? 0 : 200, flexShrink: 0, background: "#0C1624", borderRight: panelsCollapsed ? "none" : "1px solid #1A2D47", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <CasesPanel cases={cases} activeCaseId={activeCaseId} onSelectCase={selectCase} onNewCase={addCase} onDeleteCase={deleteCase} onResetData={resetAllData} />
         </div>
 
         {/* Depositions Panel */}
-        <div style={{ width: 200, flexShrink: 0, background: "#0E1A2E", borderRight: "1px solid #1A2D47", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ width: panelsCollapsed ? 0 : 200, flexShrink: 0, background: "#0E1A2E", borderRight: panelsCollapsed ? "none" : "1px solid #1A2D47", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <DepositionsPanel activeCase={activeCase} activeDepoId={activeDepoId} onSelectDepo={selectDepo} onNewDepo={addDepo} onDeleteDepo={deleteDepo} />
         </div>
 
         {/* Exhibit List */}
-        <div style={{ width: 240, flexShrink: 0, background: "#0F1B2D", borderRight: "1px solid #1E3254", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ width: panelsCollapsed ? 0 : 240, flexShrink: 0, background: "#0F1B2D", borderRight: panelsCollapsed ? "none" : "1px solid #1E3254", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <div style={{ padding: "10px 12px 6px" }}>
             <div style={{ fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 6 }}>
               {isLibrary ? "Case Library" : `${activeDepo?.witness || ""} — Exhibits`}
