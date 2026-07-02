@@ -882,7 +882,7 @@ async function shareExhibit(id) {
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#0A1628", minHeight: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#0A1628", height: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
       {/* Header */}
       <div style={{ background: "#0F1B2D", borderBottom: "1px solid #1E3254", padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 52, flexShrink: 0 }}>
@@ -907,8 +907,8 @@ async function shareExhibit(id) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setVisiblePanels(v => Math.min(3, v + 1))} disabled={visiblePanels === 3} title="Show panel" style={{ background: "transparent", border: "1px solid #1E3254", color: visiblePanels === 3 ? "#1E3254" : "#7A93B8", borderRadius: 6, padding: "5px 9px", fontSize: 13, cursor: visiblePanels === 3 ? "default" : "pointer", lineHeight: 1 }}>▶</button>
           <button onClick={() => setVisiblePanels(v => Math.max(0, v - 1))} disabled={visiblePanels === 0} title="Hide panel" style={{ background: "transparent", border: "1px solid #1E3254", color: visiblePanels === 0 ? "#1E3254" : "#7A93B8", borderRadius: 6, padding: "5px 9px", fontSize: 13, cursor: visiblePanels === 0 ? "default" : "pointer", lineHeight: 1 }}>◀</button>
+          <button onClick={() => setVisiblePanels(v => Math.min(3, v + 1))} disabled={visiblePanels === 3} title="Show panel" style={{ background: "transparent", border: "1px solid #1E3254", color: visiblePanels === 3 ? "#1E3254" : "#7A93B8", borderRadius: 6, padding: "5px 9px", fontSize: 13, cursor: visiblePanels === 3 ? "default" : "pointer", lineHeight: 1 }}>▶</button>
           {saveStatus === "saved" && <span style={{ fontSize: 10, color: "#4CAF82" }}>✓ Saved </span>}
           {sharedId && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#0D2D1A", border: "1px solid #2A5C3A", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#4CAF82" }}>
@@ -1028,17 +1028,18 @@ async function shareExhibit(id) {
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* Cases Panel */}
-        <div style={{ width: visiblePanels >= 1 ? 200 : 0, flexShrink: 0, background: "#0C1624", borderRight: visiblePanels >= 1 ? "1px solid #1A2D47" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
+        <div style={{ width: visiblePanels >= 3 ? 200 : 0, flexShrink: 0, background: "#0C1624", borderRight: visiblePanels >= 3 ? "1px solid #1A2D47" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <CasesPanel cases={cases} activeCaseId={activeCaseId} onSelectCase={selectCase} onNewCase={addCase} onDeleteCase={deleteCase} onResetData={resetAllData} />
         </div>
 
         {/* Depositions Panel */}
         <div style={{ width: visiblePanels >= 2 ? 200 : 0, flexShrink: 0, background: "#0E1A2E", borderRight: visiblePanels >= 2 ? "1px solid #1A2D47" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
+
           <DepositionsPanel activeCase={activeCase} activeDepoId={activeDepoId} onSelectDepo={selectDepo} onNewDepo={addDepo} onDeleteDepo={deleteDepo} />
         </div>
 
         {/* Exhibit List */}
-        <div style={{ width: visiblePanels >= 3 ? 240 : 0, flexShrink: 0, background: "#0F1B2D", borderRight: visiblePanels >= 3 ? "1px solid #1E3254" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
+        <div style={{ width: visiblePanels >= 1 ? 240 : 0, flexShrink: 0, background: "#0F1B2D", borderRight: visiblePanels >= 1 ? "1px solid #1E3254" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <div style={{ padding: "10px 12px 6px" }}>
             <div style={{ fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 6 }}>
               {isLibrary ? "Case Library" : `${activeDepo?.witness || ""} — Exhibits`}
@@ -1212,7 +1213,7 @@ async function shareExhibit(id) {
         <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: "#0D2D1A", border: "1px solid #2A5C3A", borderRadius: 8, padding: "8px 18px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 4px 20px rgba(0,0,0,0.5)", zIndex: 100 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#4CAF82" }} />
           <span style={{ fontSize: 12, color: "#4CAF82", fontWeight: 600 }}>{sharedExhibit?.label} — "{sharedExhibit?.name}" is live</span>
-          <button onClick={stopSharing} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Stop</button>
+          <button onClick={stopSharing} style={{ background: "transparent", border: "1px solid #3A2020", color: "#F87171", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✕ Clear witness screen</button>
         </div>
       )}
 
