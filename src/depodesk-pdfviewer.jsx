@@ -46,19 +46,19 @@ function getChannel(sessionId) {
   return supabase.channel(`pdf-sync:${sessionId}`);
 }
 
-async function broadcastPage(sessionId, exhibitId, page) {
+async function broadcastForcePage(sessionId, exhibitId, page) {
   const ch = getChannel(sessionId);
   await ch.send({
     type: "broadcast",
-    event: "page_change",
+    event: "force_page",
     payload: { exhibitId, page },
   });
 }
 
-function subscribeToPagesync(sessionId, onPage) {
+function subscribeToPagesync(sessionId, onForcePage) {
   const ch = getChannel(sessionId)
-    .on("broadcast", { event: "page_change" }, ({ payload }) => {
-      onPage(payload.exhibitId, payload.page);
+    .on("broadcast", { event: "force_page" }, ({ payload }) => {
+      onForcePage(payload.exhibitId, payload.page);
     })
     .subscribe();
   return () => supabase.removeChannel(ch);
@@ -113,9 +113,7 @@ export default function PDFViewer({
   const [scale, setScale]           = useState(1.3);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
-  const [followCounsel, setFollowCounsel] = useState(true); // witness only
-  const [counselPage, setCounselPage]     = useState(null); // witness only — tracks host's page
-  const [jumped, setJumped]         = useState(false);
+  const [directed, setDirected]     = useState(false); // witness flash on forced jump
   const scrollRef  = useRef();
   const pageRefs   = useRef({});
   const isHost     = mode === "host";
@@ -142,26 +140,18 @@ export default function PDFViewer({
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  // ── Host: broadcast page when it changes ──────────────────
-  useEffect(() => {
-    if (!isHost || !sessionId || !exhibitId || !pdfDoc) return;
-    broadcastPage(sessionId, exhibitId, currentPage);
-    onPageChange?.(currentPage);
-  }, [currentPage, isHost, sessionId, exhibitId]);
-
-  // ── Witness: subscribe to host page changes ───────────────
+  // ── Witness: subscribe to forced page jumps ───────────────
   useEffect(() => {
     if (!isWitness || !sessionId) return;
     const unsub = subscribeToPagesync(sessionId, (eid, page) => {
       if (eid !== exhibitId) return;
-      setCounselPage(page);
-      if (followCounsel) {
-        setCurrentPage(page);
-        scrollToPage(page);
-      }
+      setCurrentPage(page);
+      scrollToPage(page);
+      setDirected(true);
+      setTimeout(() => setDirected(false), 1500);
     });
     return unsub;
-  }, [isWitness, sessionId, exhibitId, followCounsel]);
+  }, [isWitness, sessionId, exhibitId]);
 
   // ── Scroll tracking → update currentPage ──────────────────
   useEffect(() => {
@@ -182,17 +172,6 @@ export default function PDFViewer({
     Object.values(pageRefs.current).forEach(el => { if (el) observer.observe(el); });
     return () => observer.disconnect();
   }, [pdfDoc, numPages]);
-
-  function jumpToCounsel() {
-    if (counselPage) { scrollToPage(counselPage); setCurrentPage(counselPage); }
-    setJumped(true);
-    setTimeout(() => setJumped(false), 1500);
-  }
-
-  function toggleFollow(val) {
-    setFollowCounsel(val);
-    if (val && counselPage) { scrollToPage(counselPage); setCurrentPage(counselPage); }
-  }
 
   // ── States ────────────────────────────────────────────────
   if (loading) return (
@@ -243,63 +222,27 @@ export default function PDFViewer({
           <button onClick={() => setScale(s => Math.min(3, s + 0.2))} style={btnStyle}>+</button>
         </div>
 
-        {/* Witness-only controls */}
-        {isWitness && (
-          <>
-            <div style={{ width: 1, height: 18, background: BORDER }} />
-
-            {/* Follow / Free toggle */}
-            <div style={{ display: "flex", alignItems: "center", gap: 1, background: DARK, borderRadius: 6, padding: 2, border: `1px solid ${BORDER}` }}>
-              <button
-                onClick={() => toggleFollow(false)}
-                style={{
-                  ...toggleBtn,
-                  background: !followCounsel ? "#162540" : "transparent",
-                  color: !followCounsel ? "#E8EDF5" : DIM,
-                  border: !followCounsel ? `1px solid ${BORDER}` : "1px solid transparent",
-                }}>
-                Free Scroll
-              </button>
-              <button
-                onClick={() => toggleFollow(true)}
-                style={{
-                  ...toggleBtn,
-                  background: followCounsel ? "#0D2D1A" : "transparent",
-                  color: followCounsel ? GREEN : DIM,
-                  border: followCounsel ? `1px solid #2A5C3A` : "1px solid transparent",
-                }}>
-                {followCounsel ? "● Follow Counsel" : "Follow Counsel"}
-              </button>
-            </div>
-
-            {/* Jump to current button (shown in free scroll mode when out of sync) */}
-            {!followCounsel && counselPage && counselPage !== currentPage && (
-              <button onClick={jumpToCounsel} style={{
-                background: jumped ? "#0D2D1A" : GOLD,
-                color: jumped ? GREEN : NAVY,
-                border: jumped ? `1px solid #2A5C3A` : "none",
-                borderRadius: 6, padding: "5px 12px", fontSize: 11,
-                fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-                transition: "all 0.2s",
-              }}>
-                {jumped ? "✓ Jumped" : `↩ Jump to counsel (p.${counselPage})`}
-              </button>
-            )}
-
-            {/* Counsel page indicator */}
-            {counselPage && (
-              <span style={{ fontSize: 11, color: DIM, marginLeft: "auto" }}>
-                Counsel on p.{counselPage}
-              </span>
-            )}
-          </>
+        {/* Witness: directed flash indicator */}
+        {isWitness && directed && (
+          <span style={{ fontSize: 11, color: GOLD, marginLeft: "auto", animation: "fadeout 1.5s forwards" }}>
+            ⬆ Counsel directed you here
+          </span>
         )}
 
-        {/* Host: page indicator */}
+        {/* Host: direct witness button */}
         {isHost && (
-          <span style={{ fontSize: 11, color: DIM, marginLeft: "auto" }}>
-            Broadcasting page {currentPage} to witnesses
-          </span>
+          <>
+            <div style={{ marginLeft: "auto" }} />
+            <button
+              onClick={() => broadcastForcePage(sessionId, exhibitId, currentPage)}
+              style={{
+                background: GOLD, color: NAVY, border: "none",
+                borderRadius: 6, padding: "5px 14px", fontSize: 11,
+                fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>
+              ⬆ Direct witness to page {currentPage}
+            </button>
+          </>
         )}
       </div>
 
@@ -328,6 +271,7 @@ export default function PDFViewer({
 
       <style>{`
         @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes fadeout { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #111; }
         ::-webkit-scrollbar-thumb { background: #1E3254; border-radius: 3px; }
