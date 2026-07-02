@@ -176,7 +176,7 @@ export default function WitnessView() {
           </div>
         )}
 
-        <div style={{ flex: 1, overflow: "hidden" }}>
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {status === "ended" ? (
             <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
               <div style={{ fontSize: 36 }}>✅</div>

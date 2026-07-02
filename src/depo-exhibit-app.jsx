@@ -251,7 +251,7 @@ function WitnessView({ sharedExhibit }) {
   const [pulse, setPulse] = useState(false);
   useEffect(() => { setPulse(true); const t = setTimeout(() => setPulse(false), 600); return () => clearTimeout(t); }, [sharedExhibit?.id]);
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#060E1A", minHeight: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#060E1A", height: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
       <div style={{ background: "#0A1628", borderBottom: "1px solid #1E3254", padding: "0 24px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 24, height: 24, background: "#C9A84C", borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, color: "#0F1B2D" }}>D</div>
@@ -275,9 +275,14 @@ function WitnessView({ sharedExhibit }) {
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{sharedExhibit.name}</div>
                 {sharedExhibit.caseName && <div style={{ fontSize: 11, color: "#4A6080", marginTop: 1 }}>{sharedExhibit.caseName}</div>}
               </div>
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#C9A84C" }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#C9A84C", animation: "pulse 1.5s infinite" }} />
-                Presented by counsel
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#C9A84C" }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#C9A84C", animation: "pulse 1.5s infinite" }} />
+                  Presented by counsel
+                </div>
+                <button onClick={stopSharing} style={{ background: "transparent", border: "1px solid #3A2020", color: "#F87171", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  ✕ Clear witness screen
+                </button>
               </div>
             </div>
             <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
@@ -518,7 +523,7 @@ export default function App() {
   const [storageReady, setStorageReady] = useState(false);
   const [saveStatus, setSaveStatus]     = useState("idle");
   const [activeSession, setActiveSession] = useState(null);
-  const [panelsCollapsed, setPanelsCollapsed] = useState(false);
+  const [visiblePanels, setVisiblePanels] = useState(3);
   const [participants, setParticipants] = useState([]);
   const [showParticipants, setShowParticipants] = useState(false);
   const saveTimer = useRef(null);
@@ -754,7 +759,14 @@ async function shareExhibit(id) {
   }
 }
 
-  function stopSharing() { setSharedId(null); CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: null }); }
+  async function stopSharing() {
+    setSharedId(null);
+    CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: null });
+    if (activeSession) {
+      const channel = supabase.channel(`session:${activeSession.id}`);
+      await channel.send({ type: "broadcast", event: "exhibit_push", payload: { exhibit: null } });
+    }
+  }
 
   function markExhibit(id) {
     // Find the next available case-wide exhibit number
@@ -895,7 +907,8 @@ async function shareExhibit(id) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setPanelsCollapsed(v => !v)} title={panelsCollapsed ? "Show panels" : "Hide panels"} style={{ background: panelsCollapsed ? "#162540" : "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 10px", fontSize: 13, cursor: "pointer", lineHeight: 1 }}>{panelsCollapsed ? "▶▶" : "◀◀"}</button>
+          <button onClick={() => setVisiblePanels(v => Math.min(3, v + 1))} disabled={visiblePanels === 3} title="Show panel" style={{ background: "transparent", border: "1px solid #1E3254", color: visiblePanels === 3 ? "#1E3254" : "#7A93B8", borderRadius: 6, padding: "5px 9px", fontSize: 13, cursor: visiblePanels === 3 ? "default" : "pointer", lineHeight: 1 }}>▶</button>
+          <button onClick={() => setVisiblePanels(v => Math.max(0, v - 1))} disabled={visiblePanels === 0} title="Hide panel" style={{ background: "transparent", border: "1px solid #1E3254", color: visiblePanels === 0 ? "#1E3254" : "#7A93B8", borderRadius: 6, padding: "5px 9px", fontSize: 13, cursor: visiblePanels === 0 ? "default" : "pointer", lineHeight: 1 }}>◀</button>
           {saveStatus === "saved" && <span style={{ fontSize: 10, color: "#4CAF82" }}>✓ Saved </span>}
           {sharedId && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#0D2D1A", border: "1px solid #2A5C3A", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#4CAF82" }}>
@@ -1015,17 +1028,17 @@ async function shareExhibit(id) {
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* Cases Panel */}
-        <div style={{ width: panelsCollapsed ? 0 : 200, flexShrink: 0, background: "#0C1624", borderRight: panelsCollapsed ? "none" : "1px solid #1A2D47", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
+        <div style={{ width: visiblePanels >= 1 ? 200 : 0, flexShrink: 0, background: "#0C1624", borderRight: visiblePanels >= 1 ? "1px solid #1A2D47" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <CasesPanel cases={cases} activeCaseId={activeCaseId} onSelectCase={selectCase} onNewCase={addCase} onDeleteCase={deleteCase} onResetData={resetAllData} />
         </div>
 
         {/* Depositions Panel */}
-        <div style={{ width: panelsCollapsed ? 0 : 200, flexShrink: 0, background: "#0E1A2E", borderRight: panelsCollapsed ? "none" : "1px solid #1A2D47", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
+        <div style={{ width: visiblePanels >= 2 ? 200 : 0, flexShrink: 0, background: "#0E1A2E", borderRight: visiblePanels >= 2 ? "1px solid #1A2D47" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <DepositionsPanel activeCase={activeCase} activeDepoId={activeDepoId} onSelectDepo={selectDepo} onNewDepo={addDepo} onDeleteDepo={deleteDepo} />
         </div>
 
         {/* Exhibit List */}
-        <div style={{ width: panelsCollapsed ? 0 : 240, flexShrink: 0, background: "#0F1B2D", borderRight: panelsCollapsed ? "none" : "1px solid #1E3254", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
+        <div style={{ width: visiblePanels >= 3 ? 240 : 0, flexShrink: 0, background: "#0F1B2D", borderRight: visiblePanels >= 3 ? "1px solid #1E3254" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.2s" }}>
           <div style={{ padding: "10px 12px 6px" }}>
             <div style={{ fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 6 }}>
               {isLibrary ? "Case Library" : `${activeDepo?.witness || ""} — Exhibits`}
