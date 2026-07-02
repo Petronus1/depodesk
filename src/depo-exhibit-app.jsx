@@ -723,10 +723,26 @@ export default function App() {
 
 async function shareExhibit(id) {
   setSharedId(id);
-  const ex = exhibits.find(e => e.id === id);
+  let ex = exhibits.find(e => e.id === id);
   notify(`${ex?.label || ex?.name} shared with all participants`);
 
   if (activeSession) {
+    // If we have a local blob but no Supabase file_path, upload now before broadcasting
+    if (!ex.file_path && ex.fileUrl?.startsWith("blob:") && activeCaseId) {
+      try {
+        notify("Uploading file for participants…", "#7A93B8");
+        const resp = await fetch(ex.fileUrl);
+        const blob = await resp.blob();
+        const ext  = ex.type === "Image" ? "png" : "pdf";
+        const file = new File([blob], `exhibit-${id}.${ext}`, { type: blob.type });
+        const path = await uploadExhibitFile(activeCaseId, id, file);
+        updateExhibits(exs => exs.map(e => e.id === id ? { ...e, file_path: path } : e));
+        ex = { ...ex, file_path: path };
+      } catch (err) {
+        console.error("Failed to upload exhibit before sharing:", err);
+        notify("Upload failed — participants will see exhibit card only", "#F87171");
+      }
+    }
     const channel = supabase.channel(`session:${activeSession.id}`);
     await channel.send({
       type: "broadcast",
