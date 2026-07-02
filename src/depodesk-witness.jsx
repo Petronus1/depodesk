@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase, getExhibitFileUrl } from "./depodesk-supabase";
+import PDFViewer from "./depodesk-pdfviewer";
 
 const GOLD  = "#C9A84C";
 const NAVY  = "#0F1B2D";
@@ -185,7 +186,7 @@ export default function WitnessView() {
             fileUrl ? (
               exhibit.type === "Image"
                 ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={fileUrl} alt={exhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                : <iframe src={fileUrl} title={exhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                : <PDFViewer url={fileUrl} mode="witness" sessionId={sessionId} exhibitId={exhibit.id} />
             ) : (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <div style={{ border: `2px solid ${GOLD}`, borderRadius: 8, padding: "20px 40px", textAlign: "center" }}>

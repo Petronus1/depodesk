@@ -280,11 +280,11 @@ function WitnessView({ sharedExhibit }) {
                 Presented by counsel
               </div>
             </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
+            <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {sharedExhibit.fileUrl ? (
                 sharedExhibit.type === "Image"
                   ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}><img src={sharedExhibit.fileUrl} alt={sharedExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                  : <iframe src={sharedExhibit.fileUrl} title={sharedExhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                  : <PDFViewer url={sharedExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={sharedExhibit.id} />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ border: "2px solid #C9A84C", borderRadius: 6, padding: "16px 32px", textAlign: "center" }}>
