@@ -131,7 +131,7 @@ export default function WitnessView() {
   }
 
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, minHeight: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, height: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
       <div style={{
         background: flash ? "#0D2033" : NAVY, borderBottom: `1px solid ${BORDER}`,
         padding: "0 20px", height: 52,
