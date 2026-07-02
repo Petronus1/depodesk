@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
-import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked } from "./depodesk-supabase"
+import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile } from "./depodesk-supabase"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
@@ -768,12 +768,20 @@ async function shareExhibit(id) {
     notify(`${label} marked into the record`, "#4CAF82");
   }
 
-  function attachFile(exhibitId, file) {
+  async function attachFile(exhibitId, file) {
     if (!file) return;
     const url  = URL.createObjectURL(file);
     const type = file.type.includes("pdf") ? "PDF" : file.type.includes("image") ? "Image" : "PDF";
     updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, fileUrl: url, type } : e));
     notify("File attached", "#4CAF82");
+    if (activeCaseId) {
+      try {
+        const path = await uploadExhibitFile(activeCaseId, exhibitId, file);
+        updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, file_path: path } : e));
+      } catch (err) {
+        console.error("Failed to upload exhibit to storage:", err);
+      }
+    }
   }
 
   function addExhibit(file) {
