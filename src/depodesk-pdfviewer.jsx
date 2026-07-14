@@ -46,15 +46,6 @@ function getChannel(sessionId) {
   return supabase.channel(`pdf-sync:${sessionId}`);
 }
 
-async function broadcastForcePage(sessionId, exhibitId, page) {
-  const ch = getChannel(sessionId);
-  await ch.send({
-    type: "broadcast",
-    event: "force_page",
-    payload: { exhibitId, page },
-  });
-}
-
 function subscribeToPagesync(sessionId, onForcePage) {
   const ch = getChannel(sessionId)
     .on("broadcast", { event: "force_page" }, ({ payload }) => {
@@ -114,10 +105,11 @@ export default function PDFViewer({
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [directed, setDirected]     = useState(false); // witness flash on forced jump
-  const scrollRef  = useRef();
-  const pageRefs   = useRef({});
-  const isHost     = mode === "host";
-  const isWitness  = mode === "witness";
+  const scrollRef    = useRef();
+  const pageRefs     = useRef({});
+  const hostChanRef  = useRef(null);
+  const isHost       = mode === "host";
+  const isWitness    = mode === "witness";
 
   // ── Load PDF ──────────────────────────────────────────────
  useEffect(() => {
@@ -139,6 +131,14 @@ export default function PDFViewer({
     const el = pageRefs.current[page];
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  // ── Host: subscribe pdf-sync channel so we can send on it ──
+  useEffect(() => {
+    if (!isHost || !sessionId) return;
+    const ch = supabase.channel(`pdf-sync:${sessionId}`).subscribe();
+    hostChanRef.current = ch;
+    return () => { supabase.removeChannel(ch); hostChanRef.current = null; };
+  }, [isHost, sessionId]);
 
   // ── Witness: subscribe to forced page jumps ───────────────
   useEffect(() => {
@@ -234,7 +234,7 @@ export default function PDFViewer({
           <>
             <div style={{ marginLeft: "auto" }} />
             <button
-              onClick={() => broadcastForcePage(sessionId, exhibitId, currentPage)}
+              onClick={() => hostChanRef.current?.send({ type: "broadcast", event: "force_page", payload: { exhibitId, page: currentPage } })}
               style={{
                 background: GOLD, color: NAVY, border: "none",
                 borderRadius: 6, padding: "5px 14px", fontSize: 11,

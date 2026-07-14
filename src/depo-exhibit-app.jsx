@@ -1162,7 +1162,7 @@ async function shareExhibit(id) {
                   </div>
                 )}
                 {activeExhibit.fileUrl ? (
-                  <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                  <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", flexDirection: "column" }}>
                     {activeExhibit.type === "Image"
                       ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={activeExhibit.fileUrl} alt={activeExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
                      : <PDFViewer url={activeExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={activeExhibit.id} />
