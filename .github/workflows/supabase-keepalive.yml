@@ -1,0 +1,24 @@
+name: Supabase keep-alive
+
+# Free-tier Supabase projects auto-pause after ~1 week without database
+# activity. This runs a trivial query twice a week to keep the project awake.
+# The anon (publishable) key below is the same one already shipped in
+# src/depodesk-supabase.js — it is safe to expose by design; RLS guards the data.
+
+on:
+  schedule:
+    - cron: "0 12 * * 1,4" # Mondays and Thursdays at 12:00 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query database
+        env:
+          SUPABASE_ANON_KEY: sb_publishable_PrBPJgc6LuQVglauugGa8A_1S9OiiJ7
+        run: |
+          curl -sSf --max-time 30 \
+            "https://jxpsqttphsccbigeppfg.supabase.co/rest/v1/cases?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
