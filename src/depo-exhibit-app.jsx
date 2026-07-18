@@ -7,17 +7,18 @@ import PDFViewer from "./depodesk-pdfviewer"
 const STORAGE_KEY = "depodesk-cases-v2";
 const ANN_KEY     = "depodesk-annotations-v1";
 const META_KEY    = "depodesk-meta-v2";
+const SESSION_KEY = "depodesk-active-session-v1";
 
 async function storageGet(key) {
-  try { const r = await window.storage.get(key); return r ? JSON.parse(r.value) : null; }
+  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null; }
   catch { return null; }
 }
 async function storageSet(key, value) {
-  try { await window.storage.set(key, JSON.stringify(value)); return true; }
+  try { localStorage.setItem(key, JSON.stringify(value)); return true; }
   catch { return false; }
 }
 async function storageDel(key) {
-  try { await window.storage.delete(key); } catch {}
+  try { localStorage.removeItem(key); } catch {}
 }
 
 function sanitizeCases(cases) {
@@ -275,21 +276,16 @@ function WitnessView({ sharedExhibit }) {
                 <div style={{ fontSize: 15, fontWeight: 600 }}>{sharedExhibit.name}</div>
                 {sharedExhibit.caseName && <div style={{ fontSize: 11, color: "#4A6080", marginTop: 1 }}>{sharedExhibit.caseName}</div>}
               </div>
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#C9A84C" }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#C9A84C", animation: "pulse 1.5s infinite" }} />
-                  Presented by counsel
-                </div>
-                <button onClick={stopSharing} style={{ background: "transparent", border: "1px solid #3A2020", color: "#F87171", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                  ✕ Clear witness screen
-                </button>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#C9A84C" }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#C9A84C", animation: "pulse 1.5s infinite" }} />
+                Presented by counsel
               </div>
             </div>
             <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {sharedExhibit.fileUrl ? (
                 sharedExhibit.type === "Image"
                   ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}><img src={sharedExhibit.fileUrl} alt={sharedExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                  : <PDFViewer url={sharedExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={sharedExhibit.id} />
+                  : <PDFViewer url={sharedExhibit.fileUrl} mode="host" sessionId={null} exhibitId={sharedExhibit.id} />
               ) : (
                 <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ border: "2px solid #C9A84C", borderRadius: 6, padding: "16px 32px", textAlign: "center" }}>
@@ -578,6 +574,17 @@ export default function App() {
         setActiveDepoId(savedMeta?.activeDepoId || "__library__");
       }
       if (savedAnns) setAnnotations(savedAnns);
+      // Restore an active session that survived a refresh — only if it's
+      // still live in Supabase, so a session ended elsewhere stays ended.
+      const savedSessionId = await storageGet(SESSION_KEY);
+      if (savedSessionId) {
+        const { data: sess } = await supabase
+          .from("sessions").select("*")
+          .eq("id", savedSessionId).eq("is_active", true)
+          .maybeSingle();
+        if (sess) setActiveSession(sess);
+        else await storageDel(SESSION_KEY);
+      }
       setStorageReady(true);
     }
     load();
@@ -925,6 +932,7 @@ async function shareExhibit(id) {
               try {
                 const sess = await startSessionWithPin(activeCaseId, activeDepoId);
                 setActiveSession(sess);
+                storageSet(SESSION_KEY, sess.id);
               } catch (err) {
                 alert("Error starting session: " + err.message);
               }
@@ -1274,6 +1282,23 @@ async function shareExhibit(id) {
         </div>
       )}
 
+      {activeSession && (
+        <SessionPanel
+          session={activeSession}
+          onEndSession={async () => {
+            await endSessionAndNotify(activeSession.id);
+            setActiveSession(null);
+            storageDel(SESSION_KEY);
+          }}
+          onTransferControl={async () => {
+            const newRole = activeSession.controller_role === "host" ? "opposing_counsel" : "host";
+            const updated = await transferControl(activeSession.id, newRole);
+            setActiveSession(prev => ({ ...prev, controller_role: updated.controller_role }));
+          }}
+          onUpdateRole={() => {}}
+        />
+      )}
+
       <style>{`
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; } }
@@ -1283,21 +1308,6 @@ async function shareExhibit(id) {
         ::-webkit-scrollbar-thumb { background: #1E3254; border-radius: 2px; }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
         select option { background: #0F1B2D; }
-      {activeSession && (
-  <SessionPanel
-    session={activeSession}
-    onEndSession={async () => {
-      await endSessionAndNotify(activeSession.id);
-      setActiveSession(null);
-    }}
-    onTransferControl={async () => {
-      const newRole = activeSession.controller_role === "host" ? "opposing_counsel" : "host";
-      const updated = await transferControl(activeSession.id, newRole);
-      setActiveSession(prev => ({ ...prev, controller_role: updated.controller_role }));
-    }}
-    onUpdateRole={() => {}}
-  />
-)}
       `}</style>
     </div>
   );
