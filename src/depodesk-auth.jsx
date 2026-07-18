@@ -109,17 +109,20 @@ function SignUpForm({ onSwitch }) {
   const [success, setSuccess]   = useState(null);
 
   async function handleSubmit() {
-  setError(null);
-  setLoading(true);
-  try {
-    await signUp(email || "ryan@peterson.legal", password || "testpassword123", fullName || "Ryan Peterson");
-    setSuccess("Account created! You can now sign in.");
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setLoading(false);
+    setError(null);
+    if (!fullName.trim() || !email.trim()) { setError("Please enter your name and email."); return; }
+    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (password !== confirm) { setError("Passwords do not match."); return; }
+    setLoading(true);
+    try {
+      await signUp(email.trim(), password, fullName.trim());
+      setSuccess("Account created! You can now sign in.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   return (
     <div>
