@@ -423,8 +423,12 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getCurrentUser().then(u => { setUser(u); setLoading(false); });
-    const sub = onAuthChange(u => setUser(u));
+    // getSession() reads from local storage — no network call, can't hang
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data?.session?.user ?? null);
+      setLoading(false);
+    });
+    const sub = onAuthChange(u => { setUser(u); setLoading(false); });
     return () => sub.unsubscribe();
   }, []);
 
