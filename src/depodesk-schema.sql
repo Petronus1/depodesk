@@ -373,28 +373,44 @@ grant execute on function public.get_session_events(uuid, uuid)          to anon
 --
 -- Policies on storage.objects (authenticated attorneys only):
 
+-- Files are stored at "<case_uuid>/<exhibit_id>.<ext>", so the first
+-- path segment identifies the case. Each policy scopes access to
+-- cases the attorney owns or is a member of. Compare the folder as
+-- text (c.id::text) rather than casting the folder to uuid, so files
+-- under non-uuid legacy folders simply don't match instead of erroring.
+create or replace function public.can_access_case_files(p_name text)
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.cases c
+     where c.id::text = (storage.foldername(p_name))[1]
+       and (c.owner_id = auth.uid()
+            or exists (select 1 from public.case_members m
+                        where m.case_id = c.id and m.user_id = auth.uid()))
+  )
+$$;
+
+grant execute on function public.can_access_case_files(text) to authenticated;
+
 create policy "Attorneys can upload exhibits"
   on storage.objects for insert to authenticated
-  with check (bucket_id = 'exhibits');
+  with check (bucket_id = 'exhibits' and public.can_access_case_files(name));
 
 create policy "Attorneys can read exhibits"
   on storage.objects for select to authenticated
-  using (bucket_id = 'exhibits');
+  using (bucket_id = 'exhibits' and public.can_access_case_files(name));
 
 create policy "Attorneys can update exhibits"
   on storage.objects for update to authenticated
-  using (bucket_id = 'exhibits');
+  using (bucket_id = 'exhibits' and public.can_access_case_files(name));
 
 create policy "Attorneys can delete exhibits"
   on storage.objects for delete to authenticated
-  using (bucket_id = 'exhibits');
+  using (bucket_id = 'exhibits' and public.can_access_case_files(name));
 
 
 -- ── KNOWN GAPS (future passes) ───────────────────────────────
--- * Storage policies scope by bucket only, not by case owner: any
---   authenticated attorney can read/write/delete any firm's exhibit
---   files. Owner-scoping (path prefix = an owned case id) is the
---   remaining storage hardening.
 -- * Realtime broadcast channels (session:<id>, pdf-sync:<id>,
 --   reporter:<id>) are open to anyone with the anon key who learns
 --   a session id — needs Realtime private channels.
