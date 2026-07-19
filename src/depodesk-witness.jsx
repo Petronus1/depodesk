@@ -39,6 +39,7 @@ export default function WitnessView() {
             if (p?.status === "approved") { clearInterval(poll); connect(); }
             if (p?.status === "rejected") { clearInterval(poll); setStatus("rejected"); }
           }, 3000);
+          unsubRef.current = () => clearInterval(poll);
           return;
         }
 

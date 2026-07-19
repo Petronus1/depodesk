@@ -33,10 +33,27 @@ export default function OpposingCounselView() {
   const name          = sessionStorage.getItem("depo_participant_name");
 
   useEffect(() => {
-    if (!sessionId) { setStatus("error"); return; }
+    if (!sessionId || !participantId) { setStatus("error"); return; }
 
     async function connect() {
       try {
+        // Wait for host approval before loading any session data
+        const { data: participant } = await supabase
+          .from("participants").select("status").eq("id", participantId).single();
+        if (!participant) { setStatus("error"); return; }
+        if (participant.status === "rejected") { setStatus("rejected"); return; }
+        if (participant.status !== "approved") {
+          setStatus("pending");
+          const poll = setInterval(async () => {
+            const { data: p } = await supabase
+              .from("participants").select("status").eq("id", participantId).single();
+            if (p?.status === "approved") { clearInterval(poll); connect(); }
+            if (p?.status === "rejected") { clearInterval(poll); setStatus("rejected"); }
+          }, 3000);
+          unsubRef.current = () => clearInterval(poll);
+          return;
+        }
+
         // Load session
         const { data: sess } = await supabase
           .from("sessions")
@@ -87,7 +104,7 @@ export default function OpposingCounselView() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (!participantId || status === "connecting" || status === "error" || status === "ended" || status === "removed") return;
+    if (!participantId || status === "connecting" || status === "pending" || status === "rejected" || status === "error" || status === "ended" || status === "removed") return;
     const viewMap = { witness: "/witness", opposing_counsel: "/opposing-counsel", court_reporter: "/court-reporter" };
     const interval = setInterval(async () => {
       const { data } = await supabase.from("participants").select("status, role").eq("id", participantId).single();
@@ -97,6 +114,32 @@ export default function OpposingCounselView() {
     }, 5000);
     return () => clearInterval(interval);
   }, [status]);
+
+  if (status === "pending") {
+    return (
+      <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#E8EDF5" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12, animation: "breathe 2s ease-in-out infinite" }}>⏳</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>Waiting for approval</div>
+          <div style={{ fontSize: 13, color: DIM, marginTop: 6 }}>Counsel must admit you before you can view the session.</div>
+        </div>
+        <style>{`@keyframes breathe { 0%,100%{opacity:.4;transform:scale(1)} 50%{opacity:.85;transform:scale(1.06)} }`}</style>
+      </div>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: DARK, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#E8EDF5" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>🚫</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#F87171" }}>Entry Declined</div>
+          <div style={{ fontSize: 13, color: DIM, marginTop: 6 }}>Counsel has declined your request to join.</div>
+          <a href="/join" style={{ display: "inline-block", marginTop: 16, color: GOLD, fontSize: 13 }}>← Back to Join</a>
+        </div>
+      </div>
+    );
+  }
 
   if (status === "removed") {
     return (
