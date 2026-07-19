@@ -385,15 +385,16 @@ create policy "Attorneys can update exhibits"
   on storage.objects for update to authenticated
   using (bucket_id = 'exhibits');
 
--- NOTE (prod, 2026-07-18): production carries a second, identical
--- set of these three policies under the names "Authenticated users
--- can … exhibits bucket" — harmless duplicates from early setup,
--- safe to drop. There is no delete policy; file deletion from the
--- app silently fails and files are orphaned when exhibits are
--- deleted (cleanup pass pending).
+create policy "Attorneys can delete exhibits"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'exhibits');
 
 
 -- ── KNOWN GAPS (future passes) ───────────────────────────────
+-- * Storage policies scope by bucket only, not by case owner: any
+--   authenticated attorney can read/write/delete any firm's exhibit
+--   files. Owner-scoping (path prefix = an owned case id) is the
+--   remaining storage hardening.
 -- * Realtime broadcast channels (session:<id>, pdf-sync:<id>,
 --   reporter:<id>) are open to anyone with the anon key who learns
 --   a session id — needs Realtime private channels.
