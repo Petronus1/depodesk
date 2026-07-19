@@ -30,6 +30,10 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   (participants passed in as a prop from the app's poll)
 - `src/depodesk-session-history.jsx` — 🕓 History modal: per-session
   audit trail + print-dialog PDF export
+- `src/depodesk-stamp.js` — burns the court-reporter exhibit sticker
+  (yellow, "EXHIBIT" + case-wide number, no date — exhibits are reused
+  across depos) onto page 1 at mark time; stamped copy becomes
+  `file_path`, original kept as `original_path`
 - `src/depodesk-schema.sql` — AUTHORITATIVE schema (rebuilt from prod
   introspection; keep in sync when changing the DB)
 - `src/depodesk-rls-migration.sql`, `src/depodesk-realtime-migration.sql`
