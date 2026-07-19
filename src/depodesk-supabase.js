@@ -552,12 +552,16 @@ export async function startSessionWithPin(caseId, depositionId) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not logged in");
 
-  // End any existing active sessions for this case
-  await supabase
-    .from("sessions")
-    .update({ is_active: false, ended_at: new Date().toISOString() })
-    .eq("case_id", caseId)
-    .eq("is_active", true);
+  // caseId must be a Supabase cases.id UUID (see ensureRemoteCaseId in the
+  // app) — the app's local "case-…" ids are not valid here.
+  if (caseId) {
+    // End any existing active sessions for this case
+    await supabase
+      .from("sessions")
+      .update({ is_active: false, ended_at: new Date().toISOString() })
+      .eq("case_id", caseId)
+      .eq("is_active", true);
+  }
 
   // Generate a unique PIN via the DB function
   const { data: pinData } = await supabase.rpc("generate_session_pin");
@@ -566,6 +570,7 @@ export async function startSessionWithPin(caseId, depositionId) {
   const { data, error } = await supabase
   .from("sessions")
   .insert({
+    case_id: caseId || null,
     host_id: user.id,
     pin,
     controller_id: user.id,

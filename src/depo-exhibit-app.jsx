@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
-import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile } from "./depodesk-supabase"
+import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile, createCase as createRemoteCase } from "./depodesk-supabase"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
@@ -576,13 +576,21 @@ export default function App() {
       if (savedAnns) setAnnotations(savedAnns);
       // Restore an active session that survived a refresh — only if it's
       // still live in Supabase, so a session ended elsewhere stays ended.
-      const savedSessionId = await storageGet(SESSION_KEY);
-      if (savedSessionId) {
+      const savedSession = await storageGet(SESSION_KEY);
+      if (savedSession) {
+        const sessId = typeof savedSession === "string" ? savedSession : savedSession.id;
+        const meta   = typeof savedSession === "string" ? {} : savedSession;
         const { data: sess } = await supabase
           .from("sessions").select("*")
-          .eq("id", savedSessionId).eq("is_active", true)
+          .eq("id", sessId).eq("is_active", true)
           .maybeSingle();
-        if (sess) setActiveSession(sess);
+        if (sess) setActiveSession({
+          ...sess,
+          localCaseId: meta.localCaseId ?? null,
+          localDepoId: meta.localDepoId ?? null,
+          witnessName: meta.witnessName ?? null,
+          caseName:    meta.caseName ?? null,
+        });
         else await storageDel(SESSION_KEY);
       }
       setStorageReady(true);
@@ -620,6 +628,23 @@ export default function App() {
     const interval = setInterval(fetchAndNotify, 8000);
     return () => clearInterval(interval);
   }, [activeSession?.id]);
+
+  // Local cases live in localStorage with "case-…" ids; sessions.case_id in
+  // Supabase is a UUID referencing the cases table. Create the remote row on
+  // first session start and remember the mapping on the local case.
+  async function ensureRemoteCaseId() {
+    const c = cases.find(x => x.id === activeCaseId);
+    if (!c) return null;
+    if (c.remoteId) return c.remoteId;
+    try {
+      const remote = await createRemoteCase({ name: c.name, number: c.number, court: c.court, status: c.status || "active" });
+      updateCases(prev => prev.map(x => x.id === c.id ? { ...x, remoteId: remote.id } : x));
+      return remote.id;
+    } catch (err) {
+      console.error("Could not create remote case; session will not be case-linked:", err);
+      return null;
+    }
+  }
 
   async function refreshParticipants() {
     if (!activeSession) return;
@@ -926,26 +951,49 @@ async function shareExhibit(id) {
           {!isLibrary && activeDepo && (
             <button onClick={() => setShowImportModal(true)} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>⬇ Import from Library</button>
           )}
-          {!isLibrary && activeDepo && (
+          {activeSession ? (
+            <button
+              onClick={() => {
+                // Jump back to the deposition this session belongs to
+                if (activeSession.localCaseId) setActiveCaseId(activeSession.localCaseId);
+                if (activeSession.localDepoId) setActiveDepoId(activeSession.localDepoId);
+                setActiveExhibitId(null);
+              }}
+              title={activeSession.witnessName
+                ? `Live session for the ${activeSession.witnessName} deposition — click to go there`
+                : "Live session — click to go to its deposition"}
+              style={{
+                background: "#0D2D1A", color: "#4CAF82",
+                border: "1px solid #2A5C3A",
+                borderRadius: 6, padding: "5px 12px", fontSize: 12,
+                fontWeight: 600, cursor: "pointer",
+              }}>
+              ● Live{activeSession.witnessName ? `: ${activeSession.witnessName}` : ""} · PIN {activeSession.pin}
+            </button>
+          ) : (!isLibrary && activeDepo && (
             <button onClick={async () => {
-              if (activeSession) return;
               try {
-                const sess = await startSessionWithPin(activeCaseId, activeDepoId);
-                setActiveSession(sess);
-                storageSet(SESSION_KEY, sess.id);
+                const remoteCaseId = await ensureRemoteCaseId();
+                const sess = await startSessionWithPin(remoteCaseId, activeDepoId);
+                const meta = {
+                  localCaseId: activeCaseId,
+                  localDepoId: activeDepoId,
+                  witnessName: activeDepo?.witness || null,
+                  caseName:    activeCase?.name || null,
+                };
+                setActiveSession({ ...sess, ...meta });
+                storageSet(SESSION_KEY, { id: sess.id, ...meta });
               } catch (err) {
                 alert("Error starting session: " + err.message);
               }
             }} style={{
-              background: activeSession ? "#0D2D1A" : "#4CAF82",
-              color: activeSession ? "#4CAF82" : "#0F1B2D",
-              border: activeSession ? "1px solid #2A5C3A" : "none",
+              background: "#4CAF82", color: "#0F1B2D", border: "none",
               borderRadius: 6, padding: "5px 12px", fontSize: 12,
               fontWeight: 600, cursor: "pointer",
             }}>
-              {activeSession ? `● Live · PIN ${activeSession.pin}` : "▶ Start Session"}
+              ▶ Start Session
             </button>
-          )}
+          ))}
           {activeSession && (
             <button onClick={() => {
               const joinUrl = `${window.location.origin}/join?pin=${activeSession.pin}`;

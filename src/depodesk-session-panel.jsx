@@ -122,6 +122,20 @@ export default function SessionPanel({ session, onEndSession, onTransferControl,
 
       {!isMinimized && (
         <div>
+          {/* Which deposition this session is for */}
+          {(session.witnessName || session.caseName) && (
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}` }}>
+              {session.witnessName && (
+                <div style={{ fontSize: 12, color: "#E8EDF5" }}>
+                  Deposition of <span style={{ fontWeight: 700, color: GOLD }}>{session.witnessName}</span>
+                </div>
+              )}
+              {session.caseName && (
+                <div style={{ fontSize: 11, color: DIM, marginTop: 2 }}>{session.caseName}</div>
+              )}
+            </div>
+          )}
+
           {/* PIN */}
           <div style={{ padding: "14px 14px 10px" }}>
             <div style={{ fontSize: 10, color: DIM, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Session PIN</div>
