@@ -163,6 +163,14 @@ function DetailsStep({ session, onJoined }) {
     if (!role) { setError("Please select your role."); return; }
     setLoading(true); setError(null);
     try {
+      // Participants need an identity for private realtime channels and
+      // file access. Sign in anonymously unless a session already exists
+      // (e.g. the attorney testing the join flow in their own browser).
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      if (!authSession) {
+        const { error: anonErr } = await supabase.auth.signInAnonymously();
+        if (anonErr) throw new Error("Could not join: " + anonErr.message);
+      }
       const { data, error } = await supabase.rpc("request_to_join", {
         p_session_id: session.id,
         p_name: name.trim(),

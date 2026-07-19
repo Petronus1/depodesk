@@ -8,7 +8,7 @@
 // ============================================================
 
 import { useState, useEffect, useRef } from "react";
-import { supabase, getExhibitFileUrl } from "./depodesk-supabase";
+import { supabase, getExhibitFileUrl, privateChannel } from "./depodesk-supabase";
 
 const GOLD   = "#C9A84C";
 const NAVY   = "#0F1B2D";
@@ -69,7 +69,7 @@ export default function OpposingCounselView() {
         setStatus("connected");
 
         // Subscribe to realtime
-        const channel = supabase.channel(`session:${sessionId}`)
+        const channel = privateChannel(`session:${sessionId}`)
           .on("broadcast", { event: "exhibit_push" }, ({ payload }) => {
             if (!payload.exhibit) { setCurrentExhibit(null); setFileUrl(null); return; }
             setCurrentExhibit(payload.exhibit);

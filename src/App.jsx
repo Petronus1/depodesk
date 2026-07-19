@@ -34,7 +34,9 @@ function AuthedApp() {
     </div>
   )
 
-  if (!user) return <AuthScreen />
+  // Anonymous sessions belong to deposition participants (created on
+  // /join for private realtime channels) — never the attorney app.
+  if (!user || user.is_anonymous) return <AuthScreen />
   return <DepoDesk />
 }
 

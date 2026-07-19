@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
-import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile, createCase as createRemoteCase, logSessionEvent } from "./depodesk-supabase"
+import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile, createCase as createRemoteCase, logSessionEvent, privateChannel, getExhibitFileUrl } from "./depodesk-supabase"
 import SessionHistory from "./depodesk-session-history"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
@@ -631,6 +631,21 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeSession?.id]);
 
+  // Rehydrate the viewing URL after a refresh: blob/signed URLs die with
+  // the page, but the file lives on in storage at exhibit.file_path.
+  useEffect(() => {
+    const ex = exhibits.find(e => e.id === activeExhibitId);
+    if (!ex?.file_path || ex.fileUrl) return;
+    let stale = false;
+    getExhibitFileUrl(ex.file_path)
+      .then(url => {
+        if (stale) return;
+        updateExhibits(exs => exs.map(e => e.id === ex.id ? { ...e, fileUrl: url } : e));
+      })
+      .catch(err => console.error("Could not refresh exhibit file URL:", err));
+    return () => { stale = true; };
+  }, [activeExhibitId, exhibits]);
+
   // Local cases live in localStorage with "case-…" ids; sessions.case_id in
   // Supabase is a UUID referencing the cases table. Create the remote row on
   // first session start and remember the mapping on the local case.
@@ -794,7 +809,7 @@ async function shareExhibit(id) {
         notify("Upload failed — participants will see exhibit card only", "#F87171");
       }
     }
-    const channel = supabase.channel(`session:${activeSession.id}`);
+    const channel = privateChannel(`session:${activeSession.id}`);
     await channel.send({
       type: "broadcast",
       event: "exhibit_push",
@@ -816,7 +831,7 @@ async function shareExhibit(id) {
     setSharedId(null);
     CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: null });
     if (activeSession) {
-      const channel = supabase.channel(`session:${activeSession.id}`);
+      const channel = privateChannel(`session:${activeSession.id}`);
       await channel.send({ type: "broadcast", event: "exhibit_push", payload: { exhibit: null } });
       logSessionEvent(activeSession.id, "exhibit_cleared", {
         exhibit_name: wasSharing?.name || null,
@@ -1174,7 +1189,7 @@ async function shareExhibit(id) {
                         }
                         {ex.marked && <span style={{ fontSize: 9, background: "#0D2D1A", color: "#4CAF82", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>✓</span>}
                         {isShared && <span style={{ fontSize: 9, background: "#0D2D1A", color: "#4CAF82", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>LIVE</span>}
-                        {ex.fileUrl && <span style={{ fontSize: 9, background: "#1E3A5F", color: "#7EB3E8", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>FILE</span>}
+                        {(ex.fileUrl || ex.file_path) && <span style={{ fontSize: 9, background: "#1E3A5F", color: "#7EB3E8", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>FILE</span>}
                         {annCount > 0 && <span style={{ fontSize: 9, background: "#2D1E3A", color: "#C07EE8", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>✏{annCount}</span>}
                       </div>
                       <div style={{ fontSize: 12, color: "#C8D6E8", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ex.name}</div>
@@ -1218,7 +1233,7 @@ async function shareExhibit(id) {
                   <input ref={attachInputRef} type="file" accept=".pdf,image/*" style={{ display: "none" }}
                     onChange={e => { attachFile(activeExhibit.id, e.target.files[0]); e.target.value = ""; }} />
                   <button onClick={() => attachInputRef.current.click()} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 11px", fontSize: 12, cursor: "pointer" }}>
-                    {activeExhibit.fileUrl ? "Replace" : "Attach File"}
+                    {(activeExhibit.fileUrl || activeExhibit.file_path) ? "Replace" : "Attach File"}
                   </button>
                   {!activeExhibit.marked && (
                     <button onClick={() => markExhibit(activeExhibit.id)} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 6, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Mark</button>
@@ -1366,6 +1381,7 @@ async function shareExhibit(id) {
       {activeSession && (
         <SessionPanel
           session={activeSession}
+          participants={participants.filter(p => p.status === "approved")}
           onEndSession={async () => {
             await endSessionAndNotify(activeSession.id);
             setActiveSession(null);

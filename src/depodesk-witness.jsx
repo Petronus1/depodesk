@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase, getExhibitFileUrl } from "./depodesk-supabase";
+import { supabase, getExhibitFileUrl, privateChannel } from "./depodesk-supabase";
 import PDFViewer from "./depodesk-pdfviewer";
 
 const GOLD  = "#C9A84C";
@@ -49,7 +49,7 @@ export default function WitnessView() {
         setSession(sessRows?.[0] ?? null);
         setStatus("waiting");
 
-        const channel = supabase.channel(`session:${sessionId}`)
+        const channel = privateChannel(`session:${sessionId}`)
           .on("broadcast", { event: "exhibit_push" }, ({ payload }) => {
             if (!payload.exhibit) {
               setExhibit(null); setFileUrl(null); setStatus("waiting"); return;

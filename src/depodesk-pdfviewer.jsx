@@ -26,7 +26,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { supabase, logSessionEvent } from "./depodesk-supabase";
+import { supabase, logSessionEvent, privateChannel } from "./depodesk-supabase";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -43,7 +43,7 @@ const GREEN  = "#4CAF82";
 
 // ── Broadcast helpers ─────────────────────────────────────────
 function getChannel(sessionId) {
-  return supabase.channel(`pdf-sync:${sessionId}`);
+  return privateChannel(`pdf-sync:${sessionId}`);
 }
 
 function subscribeToPagesync(sessionId, onForcePage) {
@@ -56,25 +56,28 @@ function subscribeToPagesync(sessionId, onForcePage) {
 }
 
 // ── Single page renderer ──────────────────────────────────────
-function PDFPage({ pdfDoc, pageNum, scale, isActive }) {
+function PDFPage({ pdfDoc, pageNum, scale, rotation, isActive }) {
   const canvasRef = useRef();
 
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current) return;
     let cancelled = false;
+    let renderTask = null;
 
     pdfDoc.getPage(pageNum).then(page => {
       if (cancelled) return;
-      const viewport = page.getViewport({ scale });
+      // Combine the page's own /Rotate with the user's rotation
+      const viewport = page.getViewport({ scale, rotation: (page.rotate + rotation) % 360 });
       const canvas   = canvasRef.current;
       const ctx      = canvas.getContext("2d");
       canvas.width   = viewport.width;
       canvas.height  = viewport.height;
-      page.render({ canvasContext: ctx, viewport });
+      renderTask = page.render({ canvasContext: ctx, viewport });
+      renderTask.promise.catch(() => {}); // cancelled renders reject; ignore
     });
 
-    return () => { cancelled = true; };
-  }, [pdfDoc, pageNum, scale]);
+    return () => { cancelled = true; renderTask?.cancel(); };
+  }, [pdfDoc, pageNum, scale, rotation]);
 
   return (
     <div style={{
@@ -85,7 +88,9 @@ function PDFPage({ pdfDoc, pageNum, scale, isActive }) {
       borderRadius: 3,
       transition: "box-shadow 0.2s",
     }}>
-      <canvas ref={canvasRef} style={{ display: "block", borderRadius: 3 }} />
+      {/* White background: PDFs without a painted background otherwise
+          show as dark text on the app's dark theme */}
+      <canvas ref={canvasRef} style={{ display: "block", borderRadius: 3, background: "#fff" }} />
     </div>
   );
 }
@@ -102,6 +107,7 @@ export default function PDFViewer({
   const [numPages, setNumPages]     = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale]           = useState(1.3);
+  const [rotation, setRotation]     = useState(0); // user rotation on top of page /Rotate
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [directed, setDirected]     = useState(false); // witness flash on forced jump
@@ -135,7 +141,7 @@ export default function PDFViewer({
   // ── Host: subscribe pdf-sync channel so we can send on it ──
   useEffect(() => {
     if (!isHost || !sessionId) return;
-    const ch = supabase.channel(`pdf-sync:${sessionId}`).subscribe();
+    const ch = privateChannel(`pdf-sync:${sessionId}`).subscribe();
     hostChanRef.current = ch;
     return () => { supabase.removeChannel(ch); hostChanRef.current = null; };
   }, [isHost, sessionId]);
@@ -222,6 +228,11 @@ export default function PDFViewer({
           <button onClick={() => setScale(s => Math.min(3, s + 0.2))} style={btnStyle}>+</button>
         </div>
 
+        <div style={{ width: 1, height: 18, background: BORDER }} />
+
+        {/* Rotate (court scans are often sideways or upside down) */}
+        <button onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°" style={btnStyle}>⟳</button>
+
         {/* Witness: directed flash indicator */}
         {isWitness && directed && (
           <span style={{ fontSize: 11, color: GOLD, marginLeft: "auto", animation: "fadeout 1.5s forwards" }}>
@@ -266,6 +277,7 @@ export default function PDFViewer({
               pdfDoc={pdfDoc}
               pageNum={pageNum}
               scale={scale}
+              rotation={rotation}
               isActive={pageNum === currentPage}
             />
           </div>

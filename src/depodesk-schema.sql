@@ -198,7 +198,10 @@ create table public.participants (
   joined_at    timestamptz default now(),
   is_active    boolean default true,
   status       text default 'pending'
-                 check (status in ('pending', 'approved', 'rejected'))
+                 check (status in ('pending', 'approved', 'rejected')),
+  auth_uid     uuid   -- anonymous auth identity, set by request_to_join;
+                      -- lets realtime and storage policies recognize the
+                      -- participant (requires Anonymous sign-ins enabled)
 );
 
 alter table public.participants enable row level security;
@@ -302,18 +305,21 @@ $$;
 
 -- Join step 2: request admission (insert bypasses RLS; validates
 -- active session, legal role, non-empty name; always pending).
+-- Records the caller's (anonymous) auth.uid() so realtime and storage
+-- policies can recognize the participant later.
 create or replace function public.request_to_join(
   p_session_id uuid, p_name text, p_email text, p_role text
 )
 returns table (id uuid, status text)
 language sql security definer set search_path = public
 as $$
-  insert into public.participants (session_id, name, email, role, status)
+  insert into public.participants (session_id, name, email, role, status, auth_uid)
   select p_session_id,
          trim(p_name),
          nullif(trim(coalesce(p_email, '')), ''),
          p_role,
-         'pending'
+         'pending',
+         auth.uid()
    where exists (select 1 from public.sessions s
                   where s.id = p_session_id and s.is_active)
      and p_role in ('witness', 'opposing_counsel', 'court_reporter')
@@ -393,13 +399,37 @@ $$;
 
 grant execute on function public.can_access_case_files(text) to authenticated;
 
+-- Reads additionally allow an approved participant of an ACTIVE
+-- session on the file's case (anonymous auth identity, matched via
+-- participants.auth_uid), so signed URLs work in participant views.
+create or replace function public.can_read_case_files(p_name text)
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.cases c
+     where c.id::text = (storage.foldername(p_name))[1]
+       and (c.owner_id = auth.uid()
+            or exists (select 1 from public.case_members m
+                        where m.case_id = c.id and m.user_id = auth.uid())
+            or exists (select 1 from public.participants p
+                        join public.sessions s on s.id = p.session_id
+                       where p.auth_uid = auth.uid()
+                         and p.status = 'approved'
+                         and s.is_active
+                         and s.case_id = c.id))
+  )
+$$;
+
+grant execute on function public.can_read_case_files(text) to authenticated;
+
 create policy "Attorneys can upload exhibits"
   on storage.objects for insert to authenticated
   with check (bucket_id = 'exhibits' and public.can_access_case_files(name));
 
-create policy "Attorneys can read exhibits"
+create policy "Attorneys and participants can read exhibits"
   on storage.objects for select to authenticated
-  using (bucket_id = 'exhibits' and public.can_access_case_files(name));
+  using (bucket_id = 'exhibits' and public.can_read_case_files(name));
 
 create policy "Attorneys can update exhibits"
   on storage.objects for update to authenticated
@@ -410,14 +440,63 @@ create policy "Attorneys can delete exhibits"
   using (bucket_id = 'exhibits' and public.can_access_case_files(name));
 
 
+-- ── 13. REALTIME AUTHORIZATION (private channels) ────────────
+-- All broadcast channels (session:<id>, pdf-sync:<id>,
+-- reporter:<id>) are private — the client joins them with
+-- { config: { private: true } } and RLS on realtime.messages
+-- decides access: hosts send and receive; approved participants
+-- (anonymous auth, matched via participants.auth_uid) receive only.
+-- Requires "Allow anonymous sign-ins" enabled in Auth settings.
+--
+-- The checks are SECURITY DEFINER because policy subqueries run as
+-- the caller, and participants cannot read the host-only sessions
+-- table directly.
+
+create or replace function public.can_receive_session_broadcasts(p_topic text)
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.sessions s
+     where s.id::text = split_part(p_topic, ':', 2)
+       and (s.host_id = auth.uid()
+            or exists (select 1 from public.participants p
+                        where p.session_id = s.id
+                          and p.auth_uid = auth.uid()
+                          and p.status = 'approved'))
+  )
+$$;
+
+create or replace function public.can_send_session_broadcasts(p_topic text)
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.sessions s
+     where s.id::text = split_part(p_topic, ':', 2)
+       and s.host_id = auth.uid()
+  )
+$$;
+
+grant execute on function public.can_receive_session_broadcasts(text) to authenticated;
+grant execute on function public.can_send_session_broadcasts(text)    to authenticated;
+
+create policy "Hosts and approved participants can receive broadcasts"
+  on realtime.messages for select to authenticated
+  using (realtime.messages.extension = 'broadcast'
+         and public.can_receive_session_broadcasts(realtime.topic()));
+
+create policy "Hosts can send broadcasts"
+  on realtime.messages for insert to authenticated
+  with check (realtime.messages.extension = 'broadcast'
+              and public.can_send_session_broadcasts(realtime.topic()));
+
+
 -- ── KNOWN GAPS (future passes) ───────────────────────────────
--- * Realtime broadcast channels (session:<id>, pdf-sync:<id>,
---   reporter:<id>) are open to anyone with the anon key who learns
---   a session id — needs Realtime private channels.
--- * Storage: signed-URL creation requires an authenticated role,
---   yet unauthenticated participant views request signed URLs;
---   works today only via the anon-accessible RPC payload metadata.
---   Revisit alongside the realtime pass.
 -- * PINs are 6 digits and join_session_by_pin is anon-callable;
 --   brute force is rate-limited only by Supabase.
+-- * Anonymous sign-ins accumulate one auth.users row per joining
+--   browser. Purge periodically:
+--     delete from auth.users
+--      where is_anonymous and created_at < now() - interval '30 days';
 -- ============================================================

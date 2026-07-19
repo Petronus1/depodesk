@@ -322,6 +322,15 @@ export async function clearAnnotations(exhibitId) {
 // ── DEPOSITION SESSIONS ──────────────────────────────────────
 
 /**
+ * All session broadcast channels are private: RLS on
+ * realtime.messages lets hosts send/receive and approved
+ * participants receive. Requires the realtime migration.
+ */
+export function privateChannel(topic) {
+  return supabase.channel(topic, { config: { private: true } });
+}
+
+/**
  * Start a new deposition session for a case.
  * Returns the session including witness_token (used in the witness URL).
  */
@@ -351,7 +360,7 @@ export async function startSession(caseId) {
  * Uses Supabase Realtime (replaces BroadcastChannel).
  */
 export async function pushExhibitToWitnesses(sessionId, exhibit) {
-  const channel = supabase.channel(`session:${sessionId}`);
+  const channel = privateChannel(`session:${sessionId}`);
   await channel.send({
     type: "broadcast",
     event: "exhibit_push",
@@ -368,8 +377,7 @@ export async function pushExhibitToWitnesses(sessionId, exhibit) {
  *   // call unsub() on component unmount
  */
 export function subscribeToSession(sessionId, onExhibit) {
-  const channel = supabase
-    .channel(`session:${sessionId}`)
+  const channel = privateChannel(`session:${sessionId}`)
     .on("broadcast", { event: "exhibit_push" }, ({ payload }) => {
       onExhibit(payload.exhibit);
     })
@@ -602,7 +610,7 @@ export async function logSessionEvent(sessionId, eventType, fields = {}) {
       .select()
       .single();
     if (error) { console.error("Failed to log session event:", error); return null; }
-    await supabase.channel(`reporter:${sessionId}`).send({
+    await privateChannel(`reporter:${sessionId}`).send({
       type: "broadcast",
       event: "session_event",
       payload: { event },
@@ -664,7 +672,7 @@ export async function transferControl(sessionId, toRole) {
   });
 
   // Broadcast to all participants
-  await supabase.channel(`session:${sessionId}`).send({
+  await privateChannel(`session:${sessionId}`).send({
     type: "broadcast",
     event: "control_transferred",
     payload: { controller_role: toRole },
@@ -678,7 +686,7 @@ export async function transferControl(sessionId, toRole) {
  */
 export async function broadcastExhibit(sessionId, exhibit, actorName) {
   // Broadcast to witness/opposing counsel views
-  await supabase.channel(`session:${sessionId}`).send({
+  await privateChannel(`session:${sessionId}`).send({
     type: "broadcast",
     event: "exhibit_push",
     payload: { exhibit },
@@ -708,7 +716,7 @@ export async function broadcastExhibitMarked(sessionId, exhibit, actorName) {
 
   // Broadcast marked exhibit to opposing counsel log
   if (event) {
-    await supabase.channel(`session:${sessionId}`).send({
+    await privateChannel(`session:${sessionId}`).send({
       type: "broadcast",
       event: "exhibit_marked",
       payload: { event },
@@ -723,12 +731,12 @@ export async function endSessionAndNotify(sessionId) {
   await logSessionEvent(sessionId, "session_ended", { actor_role: "host" });
 
   // Broadcast end to all views
-  await supabase.channel(`session:${sessionId}`).send({
+  await privateChannel(`session:${sessionId}`).send({
     type: "broadcast",
     event: "session_ended",
     payload: {},
   });
-  await supabase.channel(`reporter:${sessionId}`).send({
+  await privateChannel(`reporter:${sessionId}`).send({
     type: "broadcast",
     event: "session_ended",
     payload: {},

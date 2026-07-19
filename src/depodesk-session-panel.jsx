@@ -39,8 +39,12 @@ const ROLE_LABELS = {
 
 const ROLES = ["witness", "opposing_counsel", "court_reporter"];
 
-export default function SessionPanel({ session, onEndSession, onTransferControl, onUpdateRole }) {
-  const [participants, setParticipants] = useState([]);
+export default function SessionPanel({ session, participants: participantsProp, onEndSession, onTransferControl, onUpdateRole }) {
+  const [localParticipants, setLocalParticipants] = useState([]);
+  // Prefer the app's polled list (kept fresh every 8s); the local
+  // realtime list only works if DB replication is enabled.
+  const participants = participantsProp ?? localParticipants;
+  const setParticipants = setLocalParticipants;
   const [pinCopied, setPinCopied]       = useState(false);
   const [linkCopied, setLinkCopied]     = useState(false);
   const [isMinimized, setIsMinimized]   = useState(false);

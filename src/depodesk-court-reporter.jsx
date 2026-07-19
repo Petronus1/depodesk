@@ -9,7 +9,7 @@
 // ============================================================
 
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "./depodesk-supabase";
+import { supabase, privateChannel } from "./depodesk-supabase";
 
 const GOLD   = "#C9A84C";
 const NAVY   = "#0F1B2D";
@@ -75,7 +75,7 @@ export default function CourtReporterView() {
         setStatus("connected");
 
         // Subscribe to new events in realtime
-        const channel = supabase.channel(`reporter:${sessionId}`)
+        const channel = privateChannel(`reporter:${sessionId}`)
           .on("broadcast", { event: "session_event" }, ({ payload }) => {
             setEvents(prev => [...prev, payload.event]);
           })
