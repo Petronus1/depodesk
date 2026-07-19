@@ -4,6 +4,7 @@ import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExh
 import SessionHistory from "./depodesk-session-history"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
+import { stampPdf } from "./depodesk-stamp"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 const STORAGE_KEY = "depodesk-cases-v2";
 const ANN_KEY     = "depodesk-annotations-v1";
@@ -841,7 +842,7 @@ async function shareExhibit(id) {
     }
   }
 
-  function markExhibit(id) {
+  async function markExhibit(id) {
     // Find the next available case-wide exhibit number
     const allMarked = [];
     const c = activeCase;
@@ -867,6 +868,45 @@ async function shareExhibit(id) {
     }));
 
     notify(`${label} marked into the record`, "#4CAF82");
+
+    // Burn an exhibit stamp into the PDF so the marked document carries
+    // its number. The stamped copy becomes the canonical version (what
+    // the viewer shows and participants receive); the original path is
+    // kept on the exhibit as original_path.
+    const ex = exhibits.find(e => e.id === id);
+    if (ex && ex.type === "PDF" && (ex.fileUrl || ex.file_path)) {
+      try {
+        notify("Stamping exhibit…", "#7A93B8");
+        const srcUrl = ex.fileUrl || await getExhibitFileUrl(ex.file_path);
+        const bytes  = await (await fetch(srcUrl)).arrayBuffer();
+        const stamped = await stampPdf(bytes, { number: nextNum });
+        const blob = new Blob([stamped], { type: "application/pdf" });
+        const stampedUrl = URL.createObjectURL(blob);
+
+        let stampedPath = null;
+        const remoteCaseId = await ensureRemoteCaseId();
+        if (remoteCaseId) {
+          const file = new File([blob], `exhibit-${id}-stamped.pdf`, { type: "application/pdf" });
+          stampedPath = await uploadExhibitFile(remoteCaseId, `${id}-stamped`, file);
+        }
+
+        updateCases(prev => prev.map(c => {
+          if (c.id !== activeCaseId) return c;
+          const apply = e => e.id === id
+            ? { ...e, fileUrl: stampedUrl, original_path: e.original_path || e.file_path || null, file_path: stampedPath || e.file_path }
+            : e;
+          return {
+            ...c,
+            library: (c.library || []).map(apply),
+            depositions: (c.depositions || []).map(d => ({ ...d, exhibits: d.exhibits.map(apply) })),
+          };
+        }));
+        notify(`${label} stamped`, "#4CAF82");
+      } catch (err) {
+        console.error("Exhibit stamping failed:", err);
+        notify("Stamping failed — original document kept", "#F87171");
+      }
+    }
   }
 
   async function attachFile(exhibitId, file) {
@@ -1362,13 +1402,7 @@ async function shareExhibit(id) {
                 <input type={f.type} value={newExhibit[f.key]} placeholder={f.placeholder || ""} onChange={e => setNewExhibit(p => ({ ...p, [f.key]: e.target.value }))} style={inputStyle} />
               </div>
             ))}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 10, color: "#4A6080", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.4px" }}>Type</div>
-              <select value={newExhibit.type} onChange={e => setNewExhibit(p => ({ ...p, type: e.target.value }))} style={inputStyle}>
-                {["PDF","Email","Image","Video"].map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
               <button onClick={() => { setShowAddExhibit(false); setModalFile(null); }} style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "7px 14px", fontSize: 12, cursor: "pointer" }}>Cancel</button>
               <button onClick={() => { addExhibit(modalFile); setModalFile(null); }} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add Exhibit</button>
             </div>
