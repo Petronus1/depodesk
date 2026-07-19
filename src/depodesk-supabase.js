@@ -579,9 +579,69 @@ export async function startSessionWithPin(caseId, depositionId) {
   .select()
   .single();
   if (error) throw error;
+
+  await logSessionEvent(data.id, "session_started", { actor_role: "host" });
   return data;
 }
 
+
+/**
+ * Insert a session event and broadcast it to the court reporter feed.
+ * exhibit_id is a uuid FK — the app's local numeric exhibit ids must
+ * not be written there (they fail the insert); pass names/nums instead.
+ */
+const isUuid = v => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+export async function logSessionEvent(sessionId, eventType, fields = {}) {
+  try {
+    const row = { session_id: sessionId, event_type: eventType, ...fields };
+    if (!isUuid(row.exhibit_id)) row.exhibit_id = null;
+    const { data: event, error } = await supabase
+      .from("session_events")
+      .insert(row)
+      .select()
+      .single();
+    if (error) { console.error("Failed to log session event:", error); return null; }
+    await supabase.channel(`reporter:${sessionId}`).send({
+      type: "broadcast",
+      event: "session_event",
+      payload: { event },
+    });
+    return event;
+  } catch (err) {
+    console.error("Failed to log session event:", err);
+    return null;
+  }
+}
+
+/**
+ * All sessions this attorney has hosted (newest first), for the
+ * session history / audit trail view.
+ */
+export async function getSessionHistory() {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Not logged in");
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("*, cases(name, number)")
+    .eq("host_id", user.id)
+    .order("started_at", { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Full audit record for one session: chronological events + roster.
+ */
+export async function getSessionAudit(sessionId) {
+  const [evRes, pRes] = await Promise.all([
+    supabase.from("session_events").select("*").eq("session_id", sessionId).order("created_at", { ascending: true }),
+    supabase.from("participants").select("*").eq("session_id", sessionId).order("joined_at", { ascending: true }),
+  ]);
+  if (evRes.error) throw evRes.error;
+  if (pRes.error) throw pRes.error;
+  return { events: evRes.data || [], participants: pRes.data || [] };
+}
 
 /**
  * Transfer exhibit control to opposing counsel.
@@ -624,30 +684,13 @@ export async function broadcastExhibit(sessionId, exhibit, actorName) {
     payload: { exhibit },
   });
 
-  // Log the event
-  await supabase.from("session_events").insert({
-    session_id: sessionId,
-    event_type: "exhibit_shared",
+  // Log the event (also broadcasts to the court reporter feed)
+  await logSessionEvent(sessionId, "exhibit_shared", {
     exhibit_id: exhibit.id,
     exhibit_name: exhibit.name,
     exhibit_num: exhibit.exhibitNum || null,
     actor_name: actorName,
     actor_role: "host",
-  });
-
-  // Broadcast to court reporter
-  const { data: event } = await supabase
-    .from("session_events")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  await supabase.channel(`reporter:${sessionId}`).send({
-    type: "broadcast",
-    event: "session_event",
-    payload: { event },
   });
 }
 
@@ -655,39 +698,30 @@ export async function broadcastExhibit(sessionId, exhibit, actorName) {
  * Log and broadcast an exhibit being marked into the record.
  */
 export async function broadcastExhibitMarked(sessionId, exhibit, actorName) {
-  const { data: event } = await supabase
-    .from("session_events")
-    .insert({
-      session_id: sessionId,
-      event_type: "exhibit_marked",
-      exhibit_id: exhibit.id,
-      exhibit_name: exhibit.name,
-      exhibit_num: exhibit.exhibitNum,
-      actor_name: actorName,
-      actor_role: "host",
-    })
-    .select()
-    .single();
+  const event = await logSessionEvent(sessionId, "exhibit_marked", {
+    exhibit_id: exhibit.id,
+    exhibit_name: exhibit.name,
+    exhibit_num: exhibit.exhibitNum,
+    actor_name: actorName,
+    actor_role: "host",
+  });
 
   // Broadcast marked exhibit to opposing counsel log
-  await supabase.channel(`session:${sessionId}`).send({
-    type: "broadcast",
-    event: "exhibit_marked",
-    payload: { event },
-  });
-
-  // Broadcast to court reporter
-  await supabase.channel(`reporter:${sessionId}`).send({
-    type: "broadcast",
-    event: "session_event",
-    payload: { event },
-  });
+  if (event) {
+    await supabase.channel(`session:${sessionId}`).send({
+      type: "broadcast",
+      event: "exhibit_marked",
+      payload: { event },
+    });
+  }
 }
 
 /**
  * End a session and notify all participants.
  */
 export async function endSessionAndNotify(sessionId) {
+  await logSessionEvent(sessionId, "session_ended", { actor_role: "host" });
+
   // Broadcast end to all views
   await supabase.channel(`session:${sessionId}`).send({
     type: "broadcast",

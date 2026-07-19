@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
-import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile, createCase as createRemoteCase } from "./depodesk-supabase"
+import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile, createCase as createRemoteCase, logSessionEvent } from "./depodesk-supabase"
+import SessionHistory from "./depodesk-session-history"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
@@ -522,6 +523,7 @@ export default function App() {
   const [visiblePanels, setVisiblePanels] = useState(3);
   const [participants, setParticipants] = useState([]);
   const [showParticipants, setShowParticipants] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const saveTimer = useRef(null);
   const fileInputRef   = useRef();
   const attachInputRef = useRef();
@@ -655,16 +657,25 @@ export default function App() {
   async function approveParticipant(id) {
     await supabase.from("participants").update({ status: "approved" }).eq("id", id);
     setParticipants(prev => prev.map(p => p.id === id ? { ...p, status: "approved" } : p));
+    const p = participants.find(x => x.id === id);
+    if (activeSession) logSessionEvent(activeSession.id, "participant_admitted", { actor_name: p?.name, actor_role: p?.role });
   }
 
   async function rejectParticipant(id) {
+    const p = participants.find(x => x.id === id);
+    const wasApproved = p?.status === "approved";
     await supabase.from("participants").update({ status: "rejected" }).eq("id", id);
     setParticipants(prev => prev.map(p => p.id === id ? { ...p, status: "rejected" } : p));
+    if (activeSession) logSessionEvent(activeSession.id, wasApproved ? "participant_removed" : "participant_declined", { actor_name: p?.name, actor_role: p?.role });
   }
 
   async function changeParticipantRole(id, role) {
+    const p = participants.find(x => x.id === id);
     await supabase.from("participants").update({ role }).eq("id", id);
     setParticipants(prev => prev.map(p => p.id === id ? { ...p, role } : p));
+    if (activeSession && p && p.role !== role) {
+      logSessionEvent(activeSession.id, "role_changed", { actor_name: p.name, actor_role: role, notes: `Role changed from ${p.role.replace("_", " ")} to ${role.replace("_", " ")}` });
+    }
   }
 
   if (isWitness) return <WitnessView sharedExhibit={witnessExhibit} />;
@@ -786,17 +797,29 @@ async function shareExhibit(id) {
       event: "exhibit_push",
       payload: { exhibit: { ...ex, caseName: activeCase?.name } },
     });
+    logSessionEvent(activeSession.id, "exhibit_shared", {
+      exhibit_id: ex.id,
+      exhibit_name: ex.name,
+      exhibit_num: ex.exhibitNum || null,
+      actor_role: "host",
+    });
   } else {
     CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: { ...ex, caseName: activeCase?.name } });
   }
 }
 
   async function stopSharing() {
+    const wasSharing = exhibits.find(e => e.id === sharedId);
     setSharedId(null);
     CHANNEL?.postMessage({ type: "EXHIBIT_PUSH", payload: null });
     if (activeSession) {
       const channel = supabase.channel(`session:${activeSession.id}`);
       await channel.send({ type: "broadcast", event: "exhibit_push", payload: { exhibit: null } });
+      logSessionEvent(activeSession.id, "exhibit_cleared", {
+        exhibit_name: wasSharing?.name || null,
+        exhibit_num: wasSharing?.exhibitNum || null,
+        actor_role: "host",
+      });
     }
   }
 
@@ -1077,6 +1100,7 @@ async function shareExhibit(id) {
               </div>
             );
           })()}
+          <button onClick={() => setShowHistory(true)} title="Session history & audit trail" style={{ background: "transparent", border: "1px solid #1E3254", color: "#7A93B8", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>🕓 History</button>
           <button onClick={() => setShowAddExhibit(true)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Exhibit</button>
         </div>
       </div>
@@ -1329,6 +1353,8 @@ async function shareExhibit(id) {
           </div>
         </div>
       )}
+
+      {showHistory && <SessionHistory onClose={() => setShowHistory(false)} />}
 
       {activeSession && (
         <SessionPanel

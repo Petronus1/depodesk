@@ -26,7 +26,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { supabase } from "./depodesk-supabase";
+import { supabase, logSessionEvent } from "./depodesk-supabase";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -234,7 +234,10 @@ export default function PDFViewer({
           <>
             <div style={{ marginLeft: "auto" }} />
             <button
-              onClick={() => hostChanRef.current?.send({ type: "broadcast", event: "force_page", payload: { exhibitId, page: currentPage } })}
+              onClick={() => {
+                hostChanRef.current?.send({ type: "broadcast", event: "force_page", payload: { exhibitId, page: currentPage } });
+                if (sessionId) logSessionEvent(sessionId, "page_direct", { actor_role: "host", notes: `Directed witness to page ${currentPage}` });
+              }}
               style={{
                 background: GOLD, color: NAVY, border: "none",
                 borderRadius: 6, padding: "5px 14px", fontSize: 11,
