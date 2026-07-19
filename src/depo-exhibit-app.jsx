@@ -775,15 +775,18 @@ async function shareExhibit(id) {
   notify(`${ex?.label || ex?.name} shared with all participants`);
 
   if (activeSession) {
-    // If we have a local blob but no Supabase file_path, upload now before broadcasting
+    // If we have a local blob but no Supabase file_path, upload now before broadcasting.
+    // Files are stored under the Supabase case UUID so storage RLS can owner-scope them.
     if (!ex.file_path && ex.fileUrl?.startsWith("blob:") && activeCaseId) {
       try {
         notify("Uploading file for participants…", "#7A93B8");
+        const remoteCaseId = await ensureRemoteCaseId();
+        if (!remoteCaseId) throw new Error("Could not resolve case for upload");
         const resp = await fetch(ex.fileUrl);
         const blob = await resp.blob();
         const ext  = ex.type === "Image" ? "png" : "pdf";
         const file = new File([blob], `exhibit-${id}.${ext}`, { type: blob.type });
-        const path = await uploadExhibitFile(activeCaseId, id, file);
+        const path = await uploadExhibitFile(remoteCaseId, id, file);
         updateExhibits(exs => exs.map(e => e.id === id ? { ...e, file_path: path } : e));
         ex = { ...ex, file_path: path };
       } catch (err) {
@@ -859,8 +862,12 @@ async function shareExhibit(id) {
     notify("File attached", "#4CAF82");
     if (activeCaseId) {
       try {
-        const path = await uploadExhibitFile(activeCaseId, exhibitId, file);
-        updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, file_path: path } : e));
+        // Store under the Supabase case UUID so storage RLS can owner-scope it.
+        const remoteCaseId = await ensureRemoteCaseId();
+        if (remoteCaseId) {
+          const path = await uploadExhibitFile(remoteCaseId, exhibitId, file);
+          updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, file_path: path } : e));
+        }
       } catch (err) {
         console.error("Failed to upload exhibit to storage:", err);
       }
