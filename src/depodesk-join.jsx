@@ -110,14 +110,9 @@ function PINStep({ onVerified }) {
     if (pin.length !== 6) { setError("Please enter the 6-digit PIN."); return; }
     setLoading(true); setError(null);
     try {
-      const { data, error } = await supabase
-        .from("sessions")
-        .select("*, cases(name, number)")
-        .eq("pin", pin)
-        .eq("is_active", true)
-        .single();
-      if (error || !data) throw new Error("Invalid PIN or session has ended.");
-      onVerified(data);
+      const { data, error } = await supabase.rpc("join_session_by_pin", { p_pin: pin });
+      if (error || !data || data.length === 0) throw new Error("Invalid PIN or session has ended.");
+      onVerified(data[0]); // { id, pin, case_name, case_number }
     } catch (err) {
       setError(err.message || "Invalid PIN. Please check with the attorney.");
     } finally {
@@ -168,13 +163,16 @@ function DetailsStep({ session, onJoined }) {
     if (!role) { setError("Please select your role."); return; }
     setLoading(true); setError(null);
     try {
-      const { data, error } = await supabase
-        .from("participants")
-        .insert({ session_id: session.id, name: name.trim(), email: email.trim() || null, role, status: "pending" })
-        .select()
-        .single();
+      const { data, error } = await supabase.rpc("request_to_join", {
+        p_session_id: session.id,
+        p_name: name.trim(),
+        p_email: email.trim() || null,
+        p_role: role,
+      });
       if (error) throw error;
-      onJoined({ ...data, session });
+      const row = data?.[0];
+      if (!row) throw new Error("Could not join — the session may have ended.");
+      onJoined({ id: row.id, status: row.status, name: name.trim(), role, session });
     } catch (err) {
       setError(err.message || "Failed to join. Please try again.");
     } finally {
@@ -186,10 +184,10 @@ function DetailsStep({ session, onJoined }) {
     <div>
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: "#E8EDF5", marginBottom: 4 }}>
-          {session.cases?.name || "Deposition"}
+          {session.case_name || "Deposition"}
         </div>
-        {session.cases?.number && (
-          <div style={{ fontSize: 12, color: DIM }}>{session.cases.number}</div>
+        {session.case_number && (
+          <div style={{ fontSize: 12, color: DIM }}>{session.case_number}</div>
         )}
       </div>
 
@@ -260,13 +258,13 @@ function JoinedScreen({ participant }) {
     sessionStorage.setItem("depo_participant_role", participant.role);
 
     const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("participants").select("status").eq("id", participant.id).single();
-      if (data?.status === "approved") {
+      const { data } = await supabase.rpc("get_participant_state", { p_participant_id: participant.id });
+      const state = data?.[0];
+      if (state?.status === "approved") {
         clearInterval(interval);
         setStatus("approved");
         setTimeout(() => { window.location.href = viewMap[participant.role]; }, 1000);
-      } else if (data?.status === "rejected") {
+      } else if (state?.status === "rejected") {
         clearInterval(interval);
         setStatus("rejected");
       }

@@ -28,14 +28,14 @@ export default function WitnessView() {
     async function connect() {
       try {
         // Wait for host approval before joining the session channel
-        const { data: participant } = await supabase
-          .from("participants").select("status").eq("id", participantId).single();
+        const { data: pState } = await supabase.rpc("get_participant_state", { p_participant_id: participantId });
+        const participant = pState?.[0];
         if (participant?.status === "rejected") { setStatus("rejected"); return; }
         if (participant?.status !== "approved") {
           // Poll until approved or rejected
           const poll = setInterval(async () => {
-            const { data: p } = await supabase
-              .from("participants").select("status").eq("id", participantId).single();
+            const { data: ps } = await supabase.rpc("get_participant_state", { p_participant_id: participantId });
+            const p = ps?.[0];
             if (p?.status === "approved") { clearInterval(poll); connect(); }
             if (p?.status === "rejected") { clearInterval(poll); setStatus("rejected"); }
           }, 3000);
@@ -43,12 +43,10 @@ export default function WitnessView() {
           return;
         }
 
-        const { data: sess } = await supabase
-          .from("sessions")
-          .select("*, cases(name, number)")
-          .eq("id", sessionId)
-          .single();
-        setSession(sess);
+        const { data: sessRows } = await supabase.rpc("get_session_for_participant", {
+          p_session_id: sessionId, p_participant_id: participantId,
+        });
+        setSession(sessRows?.[0] ?? null);
         setStatus("waiting");
 
         const channel = supabase.channel(`session:${sessionId}`)
@@ -86,7 +84,8 @@ export default function WitnessView() {
     if (!participantId || status === "connecting" || status === "error" || status === "ended" || status === "rejected" || status === "removed") return;
     const viewMap = { witness: "/witness", opposing_counsel: "/opposing-counsel", court_reporter: "/court-reporter" };
     const interval = setInterval(async () => {
-      const { data } = await supabase.from("participants").select("status, role").eq("id", participantId).single();
+      const { data: rows } = await supabase.rpc("get_participant_state", { p_participant_id: participantId });
+      const data = rows?.[0];
       if (!data) return;
       if (data.status === "rejected") { clearInterval(interval); setStatus("removed"); return; }
       if (data.role !== "witness") { clearInterval(interval); window.location.href = viewMap[data.role]; }
@@ -208,7 +207,7 @@ export default function WitnessView() {
       </div>
 
       <div style={{ background: NAVY, borderTop: `1px solid ${BORDER}`, padding: "7px 20px", display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: DIM }}>{session?.cases?.name || "Deposition"}</span>
+        <span style={{ fontSize: 11, color: DIM }}>{session?.case_name || "Deposition"}</span>
         <span style={{ fontSize: 11, color: "#1E3254" }}>Witness · Read-only</span>
       </div>
 

@@ -44,15 +44,15 @@ export default function CourtReporterView() {
     async function connect() {
       try {
         // Wait for host approval before loading any session data
-        const { data: participant } = await supabase
-          .from("participants").select("status").eq("id", participantId).single();
+        const { data: pState } = await supabase.rpc("get_participant_state", { p_participant_id: participantId });
+        const participant = pState?.[0];
         if (!participant) { setStatus("error"); return; }
         if (participant.status === "rejected") { setStatus("rejected"); return; }
         if (participant.status !== "approved") {
           setStatus("pending");
           const poll = setInterval(async () => {
-            const { data: p } = await supabase
-              .from("participants").select("status").eq("id", participantId).single();
+            const { data: ps } = await supabase.rpc("get_participant_state", { p_participant_id: participantId });
+            const p = ps?.[0];
             if (p?.status === "approved") { clearInterval(poll); connect(); }
             if (p?.status === "rejected") { clearInterval(poll); setStatus("rejected"); }
           }, 3000);
@@ -61,19 +61,15 @@ export default function CourtReporterView() {
         }
 
         // Load session
-        const { data: sess } = await supabase
-          .from("sessions")
-          .select("*, cases(name, number)")
-          .eq("id", sessionId)
-          .single();
-        setSession(sess);
+        const { data: sessRows } = await supabase.rpc("get_session_for_participant", {
+          p_session_id: sessionId, p_participant_id: participantId,
+        });
+        setSession(sessRows?.[0] ?? null);
 
         // Load existing events
-        const { data: existing } = await supabase
-          .from("session_events")
-          .select("*")
-          .eq("session_id", sessionId)
-          .order("created_at", { ascending: true });
+        const { data: existing } = await supabase.rpc("get_session_events", {
+          p_session_id: sessionId, p_participant_id: participantId,
+        });
         if (existing) setEvents(existing);
 
         setStatus("connected");
@@ -102,7 +98,8 @@ export default function CourtReporterView() {
     if (!participantId || status === "connecting" || status === "pending" || status === "rejected" || status === "error" || status === "ended" || status === "removed") return;
     const viewMap = { witness: "/witness", opposing_counsel: "/opposing-counsel", court_reporter: "/court-reporter" };
     const interval = setInterval(async () => {
-      const { data } = await supabase.from("participants").select("status, role").eq("id", participantId).single();
+      const { data: rows } = await supabase.rpc("get_participant_state", { p_participant_id: participantId });
+      const data = rows?.[0];
       if (!data) return;
       if (data.status === "rejected") { clearInterval(interval); setStatus("removed"); return; }
       if (data.role !== "court_reporter") { clearInterval(interval); window.location.href = viewMap[data.role]; }
@@ -194,10 +191,10 @@ export default function CourtReporterView() {
           <div style={{ fontSize: 18, fontWeight: 800, color: "#E8EDF5" }}>{events.length}</div>
           <div style={{ fontSize: 10, color: DIM, textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Events</div>
         </div>
-        {session?.cases?.name && (
+        {session?.case_name && (
           <div style={{ marginLeft: "auto", textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#E8EDF5" }}>{session.cases.name}</div>
-            {session.cases.number && <div style={{ fontSize: 11, color: DIM }}>{session.cases.number}</div>}
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#E8EDF5" }}>{session.case_name}</div>
+            {session.case_number && <div style={{ fontSize: 11, color: DIM }}>{session.case_number}</div>}
           </div>
         )}
       </div>
@@ -279,7 +276,7 @@ export default function CourtReporterView() {
 
       {/* Footer */}
       <div style={{ background: NAVY, borderTop: `1px solid ${BORDER}`, padding: "7px 20px", display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
-        <span style={{ fontSize: 11, color: DIM }}>{session?.cases?.name}</span>
+        <span style={{ fontSize: 11, color: DIM }}>{session?.case_name}</span>
         <span style={{ fontSize: 11, color: "#1E3254" }}>Court Reporter · Read-only</span>
       </div>
 
