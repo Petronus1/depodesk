@@ -227,6 +227,9 @@ create table public.session_events (
   exhibit_id   uuid references public.exhibits(id) on delete set null,
   exhibit_name text,
   exhibit_num  int,
+  exhibit_file_path text,                    -- canonical file snapshot for package export
+  exhibit_file_name text,
+  exhibit_mime_type text,
   actor_name   text,
   actor_role   text,
   notes        text,

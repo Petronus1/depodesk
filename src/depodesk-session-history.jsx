@@ -9,10 +9,10 @@
 
 import { useState, useEffect } from "react";
 import { getSessionHistory, getSessionAudit } from "./depodesk-supabase";
+import { exportSessionPackage } from "./depodesk-session-package";
 
 const GOLD   = "#C9A84C";
 const NAVY   = "#0F1B2D";
-const DARK   = "#0A1628";
 const BORDER = "#1E3254";
 const MUTED  = "#7A93B8";
 const DIM    = "#4A6080";
@@ -125,6 +125,7 @@ export default function SessionHistory({ onClose }) {
   const [selected, setSelected]   = useState(null);
   const [audit, setAudit]         = useState(null);
   const [error, setError]         = useState(null);
+  const [packageStatus, setPackageStatus] = useState(null);
 
   useEffect(() => {
     getSessionHistory().then(setSessions).catch(err => setError(err.message));
@@ -134,7 +135,21 @@ export default function SessionHistory({ onClose }) {
     if (!selected) { setAudit(null); return; }
     setAudit(null);
     getSessionAudit(selected.id).then(setAudit).catch(err => setError(err.message));
-  }, [selected?.id]);
+  }, [selected]);
+
+  async function downloadPackage() {
+    if (!selected || !audit || packageStatus) return;
+    setError(null);
+    setPackageStatus("Preparing package…");
+    try {
+      const count = await exportSessionPackage(selected, audit.events, audit.participants, setPackageStatus);
+      setPackageStatus(null);
+      if (count === 0) alert("Package created with the cover index and audit PDF. This session has no marked exhibits with downloadable file snapshots.");
+    } catch (err) {
+      setPackageStatus(null);
+      setError(`Package export failed: ${err.message}`);
+    }
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
@@ -148,9 +163,14 @@ export default function SessionHistory({ onClose }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {selected && audit && (
-              <button onClick={() => exportPdf(selected, audit.events, audit.participants)} style={{ background: GOLD, color: NAVY, border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                ⇩ Export PDF
-              </button>
+              <>
+                <button onClick={downloadPackage} disabled={Boolean(packageStatus)} style={{ background: GREEN, color: NAVY, border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: packageStatus ? "wait" : "pointer", opacity: packageStatus ? 0.7 : 1 }}>
+                  {packageStatus || "⇩ Exhibit Package"}
+                </button>
+                <button onClick={() => exportPdf(selected, audit.events, audit.participants)} style={{ background: GOLD, color: NAVY, border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  ⇩ Audit PDF
+                </button>
+              </>
             )}
             <button onClick={onClose} style={{ background: "transparent", border: `1px solid ${BORDER}`, color: MUTED, borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>Close</button>
           </div>

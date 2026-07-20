@@ -83,8 +83,8 @@ export → session end broadcast.
 **AgileLaw feature roadmap (in recommended order)**
 1. ~~Exhibit stamping~~ ✅
 2. ~~Witness annotation~~ ✅
-3. Post-deposition exhibit package — zip of stamped exhibits + audit
-   PDF + cover index (court reporters ask for exactly this)
+3. ~~Post-deposition exhibit package — zip of stamped exhibits + audit
+   PDF + cover index~~ ✅ (migration pending production application)
 4. Opposing counsel presentation while holding control
 5. Numbering schemes (Plaintiff's/Defendant's prefixes, pre-marking)
 6. Second chair / co-counsel (case_members table exists, no UI)

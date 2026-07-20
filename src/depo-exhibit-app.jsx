@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
-import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExhibit, broadcastExhibitMarked, uploadExhibitFile, createCase as createRemoteCase, logSessionEvent, privateChannel, getExhibitFileUrl } from "./depodesk-supabase"
+import { startSessionWithPin, endSessionAndNotify, transferControl, uploadExhibitFile, createCase as createRemoteCase, logSessionEvent, privateChannel, getExhibitFileUrl } from "./depodesk-supabase"
 import SessionHistory from "./depodesk-session-history"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
@@ -874,6 +874,9 @@ async function shareExhibit(id) {
     // the viewer shows and participants receive); the original path is
     // kept on the exhibit as original_path.
     const ex = exhibits.find(e => e.id === id);
+    let canonicalPath = ex?.file_path || null;
+    let canonicalName = ex?.file_name || null;
+    let canonicalMime = ex?.type === "Image" ? "image/png" : "application/pdf";
     if (ex && ex.type === "PDF" && (ex.fileUrl || ex.file_path)) {
       try {
         notify("Stamping exhibit…", "#7A93B8");
@@ -889,6 +892,9 @@ async function shareExhibit(id) {
           const file = new File([blob], `exhibit-${id}-stamped.pdf`, { type: "application/pdf" });
           stampedPath = await uploadExhibitFile(remoteCaseId, `${id}-stamped`, file);
         }
+        canonicalPath = stampedPath || ex.file_path || null;
+        canonicalName = `Exhibit ${nextNum} - ${ex.name}.pdf`;
+        canonicalMime = "application/pdf";
 
         updateCases(prev => prev.map(c => {
           if (c.id !== activeCaseId) return c;
@@ -906,6 +912,18 @@ async function shareExhibit(id) {
         console.error("Exhibit stamping failed:", err);
         notify("Stamping failed — original document kept", "#F87171");
       }
+    }
+
+    if (activeSession) {
+      await logSessionEvent(activeSession.id, "exhibit_marked", {
+        exhibit_id: ex?.id,
+        exhibit_name: ex?.name || null,
+        exhibit_num: nextNum,
+        exhibit_file_path: canonicalPath,
+        exhibit_file_name: canonicalName,
+        exhibit_mime_type: canonicalMime,
+        actor_role: "host",
+      });
     }
   }
 

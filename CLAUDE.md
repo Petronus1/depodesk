@@ -33,7 +33,8 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 - `src/depodesk-session-panel.jsx` — floating live-session panel
   (participants passed in as a prop from the app's poll)
 - `src/depodesk-session-history.jsx` — 🕓 History modal: per-session
-  audit trail + print-dialog PDF export
+  audit trail + print-dialog PDF export + post-deposition ZIP package
+  (cover index, generated audit PDF, and marked exhibit files)
 - `src/depodesk-stamp.js` — burns the court-reporter exhibit sticker
   (yellow, "EXHIBIT" + case-wide number, no date — exhibits are reused
   across depos) onto page 1 at mark time; stamped copy becomes
@@ -114,3 +115,6 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   `privateChannel()` instances; revoke blob object URLs.
 - Pre-existing lint: conditional `useCallback` after the `isWitness`
   early return in depo-exhibit-app.jsx (harmless, `isWitness` is stable).
+- Package exports for sessions created before `depodesk-package-migration.sql`
+  include the cover and audit PDFs but cannot recover historical exhibit
+  files, because their storage paths were not captured in audit events.
