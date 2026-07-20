@@ -13,7 +13,7 @@
 // different edge. Fine for v1 — the viewer has a rotate control.
 // ============================================================
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, LineCapStyle } from "pdf-lib";
 
 /**
  * @param bytes   ArrayBuffer | Uint8Array of the source PDF
@@ -59,5 +59,36 @@ export async function stampPdf(bytes, { number }) {
     size: numSize, font: bold, color: rgb(0.08, 0.08, 0.08),
   });
 
+  return doc.save();
+}
+
+/**
+ * Burn witness markup strokes into a PDF (used when counsel saves a
+ * witness markup session). Strokes carry page-normalized points
+ * (0..1, origin top-left of the rendered page) — the same space the
+ * MarkupCanvas overlay records in. Assumes unrotated pages (v1).
+ *
+ * @param bytes    ArrayBuffer | Uint8Array of the source PDF
+ * @param strokes  [{ page, pts: [{x, y}], color? }]
+ * @returns Uint8Array of the flattened PDF
+ */
+export async function flattenMarkup(bytes, strokes) {
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const red = rgb(0.87, 0.07, 0.07);
+  for (const s of strokes) {
+    const pageIndex = (s.page || 1) - 1;
+    if (pageIndex < 0 || pageIndex >= doc.getPageCount()) continue;
+    const page = doc.getPage(pageIndex);
+    const { width, height } = page.getSize();
+    for (let i = 1; i < s.pts.length; i++) {
+      page.drawLine({
+        start: { x: s.pts[i - 1].x * width, y: height - s.pts[i - 1].y * height },
+        end:   { x: s.pts[i].x     * width, y: height - s.pts[i].y     * height },
+        thickness: 2,
+        color: red,
+        lineCap: LineCapStyle.Round,
+      });
+    }
+  }
   return doc.save();
 }

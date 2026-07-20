@@ -4,7 +4,7 @@ import { startSessionWithPin, endSessionAndNotify, transferControl, broadcastExh
 import SessionHistory from "./depodesk-session-history"
 import { supabase } from "./depodesk-supabase"
 import PDFViewer from "./depodesk-pdfviewer"
-import { stampPdf } from "./depodesk-stamp"
+import { stampPdf, flattenMarkup } from "./depodesk-stamp"
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 const STORAGE_KEY = "depodesk-cases-v2";
 const ANN_KEY     = "depodesk-annotations-v1";
@@ -909,6 +909,58 @@ async function shareExhibit(id) {
     }
   }
 
+  // Counsel saved a witness markup session: flatten the strokes into
+  // the exhibit's PDF and add the result as a NEW exhibit in this
+  // deposition ("… — as marked by witness"), ready to mark and share.
+  async function handleWitnessMarkup(strokes) {
+    const ex = exhibits.find(e => e.id === activeExhibitId);
+    if (!ex || strokes.length === 0) return;
+    try {
+      notify("Saving witness markup…", "#7A93B8");
+      const srcUrl = ex.fileUrl || await getExhibitFileUrl(ex.file_path);
+      const bytes  = await (await fetch(srcUrl)).arrayBuffer();
+      const flat   = await flattenMarkup(bytes, strokes);
+      const blob   = new Blob([flat], { type: "application/pdf" });
+      const url    = URL.createObjectURL(blob);
+
+      const newId = Date.now();
+      let path = null;
+      const remoteCaseId = await ensureRemoteCaseId();
+      if (remoteCaseId) {
+        const file = new File([blob], `exhibit-${newId}-witness-marked.pdf`, { type: "application/pdf" });
+        path = await uploadExhibitFile(remoteCaseId, `${newId}-witness-marked`, file);
+      }
+
+      const markedExhibit = {
+        id: newId,
+        label: null,
+        exhibitNum: null,
+        name: `${ex.name} — as marked by witness`,
+        type: "PDF",
+        date: new Date().toISOString().slice(0, 10),
+        tags: [...(ex.tags || []), "witness-marked"],
+        fileUrl: url,
+        file_path: path,
+        marked: false,
+      };
+      updateExhibits(exs => [...exs, markedExhibit]);
+      setActiveExhibitId(newId);
+
+      if (activeSession) {
+        logSessionEvent(activeSession.id, "witness_marked_exhibit", {
+          exhibit_name: ex.name,
+          exhibit_num: ex.exhibitNum || null,
+          actor_role: "witness",
+          notes: `${strokes.length} mark${strokes.length !== 1 ? "s" : ""} saved as "${markedExhibit.name}"`,
+        });
+      }
+      notify("Witness markup saved as new exhibit", "#4CAF82");
+    } catch (err) {
+      console.error("Failed to save witness markup:", err);
+      notify("Failed to save witness markup", "#F87171");
+    }
+  }
+
   async function attachFile(exhibitId, file) {
     if (!file) return;
     const url  = URL.createObjectURL(file);
@@ -1307,7 +1359,7 @@ async function shareExhibit(id) {
                   <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", flexDirection: "column" }}>
                     {activeExhibit.type === "Image"
                       ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={activeExhibit.fileUrl} alt={activeExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                     : <PDFViewer url={activeExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={activeExhibit.id} />
+                     : <PDFViewer url={activeExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={activeExhibit.id} onSaveMarkup={handleWitnessMarkup} />
                     }
                     {showAnnotations && <AnnotationLayer exhibitId={activeExhibit.id} tool={annTool} color={annColor} annotations={annotations} setAnnotations={setAnnotations} />}
                   </div>

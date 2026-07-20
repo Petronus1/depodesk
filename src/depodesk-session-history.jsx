@@ -31,6 +31,8 @@ const EVENT_LABELS = {
   participant_removed:  { icon: "－", color: "#F87171", label: "Removed" },
   role_changed:         { icon: "✎", color: "#C084FC", label: "Role changed" },
   page_direct:          { icon: "⬆", color: GOLD,      label: "Directed witness to page" },
+  witness_markup_started: { icon: "✏", color: "#C07EE8", label: "Witness markup requested" },
+  witness_marked_exhibit: { icon: "✏", color: "#C07EE8", label: "Witness marked exhibit" },
 };
 
 const ROLE_LABELS = {

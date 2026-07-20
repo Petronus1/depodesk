@@ -69,6 +69,10 @@ as $$
   )
 $$;
 
+-- Hosts may send on any of their session's topics. Approved
+-- participants may send ONLY on annotate:<session id> — the witness
+-- markup stroke channel — never on session:/pdf-sync:/reporter:
+-- (which would allow spoofing exhibit pushes).
 create or replace function public.can_send_session_broadcasts(p_topic text)
 returns boolean
 language sql security definer set search_path = public
@@ -76,7 +80,12 @@ as $$
   select exists (
     select 1 from public.sessions s
      where s.id::text = split_part(p_topic, ':', 2)
-       and s.host_id = auth.uid()
+       and (s.host_id = auth.uid()
+            or (split_part(p_topic, ':', 1) = 'annotate'
+                and exists (select 1 from public.participants p
+                             where p.session_id = s.id
+                               and p.auth_uid = auth.uid()
+                               and p.status = 'approved')))
   )
 $$;
 

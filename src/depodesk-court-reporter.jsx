@@ -22,8 +22,18 @@ const GREEN  = "#4CAF82";
 const EVENT_CONFIG = {
   exhibit_marked:       { icon: "✓", color: GREEN,    label: "Marked into record" },
   exhibit_shared:       { icon: "→", color: GOLD,     label: "Presented to witness" },
+  exhibit_cleared:      { icon: "✕", color: MUTED,    label: "Presentation cleared" },
   control_transferred:  { icon: "⇄", color: "#C084FC", label: "Control transferred" },
   participant_joined:   { icon: "↓", color: MUTED,    label: "Joined session" },
+  participant_admitted: { icon: "＋", color: "#7EB3E8", label: "Admitted" },
+  participant_declined: { icon: "⊘", color: "#F87171", label: "Declined" },
+  participant_removed:  { icon: "－", color: "#F87171", label: "Removed" },
+  role_changed:         { icon: "✎", color: "#C084FC", label: "Role changed" },
+  session_started:      { icon: "▶", color: GREEN,    label: "Session started" },
+  session_ended:        { icon: "■", color: "#F87171", label: "Session ended" },
+  page_direct:          { icon: "⬆", color: GOLD,     label: "Directed witness to page" },
+  witness_markup_started: { icon: "✏", color: "#C07EE8", label: "Witness markup requested" },
+  witness_marked_exhibit: { icon: "✏", color: "#C07EE8", label: "Witness marked exhibit" },
 };
 
 export default function CourtReporterView() {

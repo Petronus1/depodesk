@@ -41,22 +41,73 @@ const MUTED  = "#7A93B8";
 const DIM    = "#4A6080";
 const GREEN  = "#4CAF82";
 
-// ── Broadcast helpers ─────────────────────────────────────────
-function getChannel(sessionId) {
-  return privateChannel(`pdf-sync:${sessionId}`);
-}
+// ── Witness markup overlay ────────────────────────────────────
+// Draws strokes stored in page-normalized coordinates (0..1) and,
+// when active, captures new pen strokes with pointer events.
+function MarkupCanvas({ strokes, active, onStroke }) {
+  const ref     = useRef();
+  const current = useRef(null); // in-progress stroke
 
-function subscribeToPagesync(sessionId, onForcePage) {
-  const ch = getChannel(sessionId)
-    .on("broadcast", { event: "force_page" }, ({ payload }) => {
-      onForcePage(payload.exhibitId, payload.page);
-    })
-    .subscribe();
-  return () => supabase.removeChannel(ch);
+  function redraw() {
+    const c = ref.current;
+    if (!c) return;
+    const w = (c.width = c.offsetWidth);
+    const h = (c.height = c.offsetHeight);
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, w, h);
+    const all = [...(strokes || []), ...(current.current ? [current.current] : [])];
+    for (const s of all) {
+      if (!s.pts || s.pts.length < 2) continue;
+      ctx.beginPath();
+      ctx.strokeStyle = s.color || "#DD1111";
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.moveTo(s.pts[0].x * w, s.pts[0].y * h);
+      s.pts.slice(1).forEach(p => ctx.lineTo(p.x * w, p.y * h));
+      ctx.stroke();
+    }
+  }
+
+  useEffect(redraw, [strokes]);
+
+  function norm(e) {
+    const r = ref.current.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  }
+
+  return (
+    <canvas
+      ref={ref}
+      onPointerDown={e => {
+        if (!active) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        current.current = { pts: [norm(e)], color: "#DD1111" };
+      }}
+      onPointerMove={e => {
+        if (!active || !current.current) return;
+        current.current.pts.push(norm(e));
+        redraw();
+      }}
+      onPointerUp={() => {
+        if (!active || !current.current) return;
+        const s = current.current;
+        current.current = null;
+        if (s.pts.length >= 2) onStroke?.(s.pts);
+        redraw();
+      }}
+      style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+        cursor: active ? "crosshair" : "default",
+        pointerEvents: active ? "auto" : "none",
+        touchAction: "none",
+      }}
+    />
+  );
 }
 
 // ── Single page renderer ──────────────────────────────────────
-function PDFPage({ pdfDoc, pageNum, scale, rotation, isActive }) {
+function PDFPage({ pdfDoc, pageNum, scale, rotation, isActive, markupStrokes, markupActive, onMarkupStroke }) {
   const canvasRef = useRef();
 
   useEffect(() => {
@@ -81,6 +132,7 @@ function PDFPage({ pdfDoc, pageNum, scale, rotation, isActive }) {
 
   return (
     <div style={{
+      position: "relative",
       marginBottom: 16,
       boxShadow: isActive
         ? `0 0 0 2px ${GOLD}, 0 4px 24px rgba(0,0,0,0.4)`
@@ -91,6 +143,9 @@ function PDFPage({ pdfDoc, pageNum, scale, rotation, isActive }) {
       {/* White background: PDFs without a painted background otherwise
           show as dark text on the app's dark theme */}
       <canvas ref={canvasRef} style={{ display: "block", borderRadius: 3, background: "#fff" }} />
+      {(markupActive || markupStrokes?.length > 0) && (
+        <MarkupCanvas strokes={markupStrokes} active={markupActive} onStroke={onMarkupStroke} />
+      )}
     </div>
   );
 }
@@ -102,6 +157,7 @@ export default function PDFViewer({
   sessionId,
   exhibitId,
   onPageChange,         // optional callback for parent
+  onSaveMarkup,         // host: called with witness strokes on "Save markup"
 }) {
   const [pdfDoc, setPdfDoc]         = useState(null);
   const [numPages, setNumPages]     = useState(0);
@@ -111,9 +167,12 @@ export default function PDFViewer({
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
   const [directed, setDirected]     = useState(false); // witness flash on forced jump
-  const scrollRef    = useRef();
-  const pageRefs     = useRef({});
-  const hostChanRef  = useRef(null);
+  const [markup, setMarkup]         = useState(null);  // { page } while witness markup is live
+  const [markupStrokes, setMarkupStrokes] = useState([]); // [{ page, pts:[{x,y} 0..1], color }]
+  const scrollRef       = useRef();
+  const pageRefs        = useRef({});
+  const hostChanRef     = useRef(null);
+  const annotateChanRef = useRef(null); // witness: subscribed channel for sending strokes
   const isHost       = mode === "host";
   const isWitness    = mode === "witness";
 
@@ -146,18 +205,58 @@ export default function PDFViewer({
     return () => { supabase.removeChannel(ch); hostChanRef.current = null; };
   }, [isHost, sessionId]);
 
-  // ── Witness: subscribe to forced page jumps ───────────────
+  // ── Witness: page jumps + markup start/end on pdf-sync ────
   useEffect(() => {
     if (!isWitness || !sessionId) return;
-    const unsub = subscribeToPagesync(sessionId, (eid, page) => {
-      if (eid !== exhibitId) return;
-      setCurrentPage(page);
-      scrollToPage(page);
-      setDirected(true);
-      setTimeout(() => setDirected(false), 1500);
-    });
-    return unsub;
+    const ch = privateChannel(`pdf-sync:${sessionId}`)
+      .on("broadcast", { event: "force_page" }, ({ payload }) => {
+        if (payload.exhibitId !== exhibitId) return;
+        setCurrentPage(payload.page);
+        scrollToPage(payload.page);
+        setDirected(true);
+        setTimeout(() => setDirected(false), 1500);
+      })
+      .on("broadcast", { event: "annotation_start" }, ({ payload }) => {
+        if (payload.exhibitId !== exhibitId) return;
+        setMarkup({ page: payload.page });
+        setMarkupStrokes([]);
+        setCurrentPage(payload.page);
+        scrollToPage(payload.page);
+        // dedicated sendable channel: approved participants may
+        // broadcast on annotate:<id> (and nothing else)
+        annotateChanRef.current = privateChannel(`annotate:${sessionId}`).subscribe();
+      })
+      .on("broadcast", { event: "annotation_end" }, () => {
+        setMarkup(null);
+        setMarkupStrokes([]);
+        if (annotateChanRef.current) { supabase.removeChannel(annotateChanRef.current); annotateChanRef.current = null; }
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+      if (annotateChanRef.current) { supabase.removeChannel(annotateChanRef.current); annotateChanRef.current = null; }
+    };
   }, [isWitness, sessionId, exhibitId]);
+
+  // ── Host: receive witness strokes while markup is live ────
+  useEffect(() => {
+    if (!isHost || !sessionId) return;
+    const ch = privateChannel(`annotate:${sessionId}`)
+      .on("broadcast", { event: "stroke" }, ({ payload }) => {
+        if (payload.exhibitId !== exhibitId) return;
+        setMarkupStrokes(prev => [...prev, payload.stroke]);
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [isHost, sessionId, exhibitId]);
+
+  // Witness: record a finished stroke locally and send it to the host
+  function handleMarkupStroke(pts) {
+    if (!markup) return;
+    const stroke = { page: markup.page, pts, color: "#DD1111" };
+    setMarkupStrokes(prev => [...prev, stroke]);
+    annotateChanRef.current?.send({ type: "broadcast", event: "stroke", payload: { exhibitId, stroke } });
+  }
 
   // ── Scroll tracking → update currentPage ──────────────────
   useEffect(() => {
@@ -234,28 +333,88 @@ export default function PDFViewer({
         <button onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°" style={btnStyle}>⟳</button>
 
         {/* Witness: directed flash indicator */}
-        {isWitness && directed && (
+        {isWitness && directed && !markup && (
           <span style={{ fontSize: 11, color: GOLD, marginLeft: "auto", animation: "fadeout 1.5s forwards" }}>
             ⬆ Counsel directed you here
           </span>
         )}
 
-        {/* Host: direct witness button */}
+        {/* Witness: markup mode indicator */}
+        {isWitness && markup && (
+          <span style={{ fontSize: 11, color: "#F87171", marginLeft: "auto", fontWeight: 700 }}>
+            ✏️ Please mark page {markup.page} as directed by counsel
+          </span>
+        )}
+
+        {/* Host: direct witness + witness markup controls */}
         {isHost && (
           <>
             <div style={{ marginLeft: "auto" }} />
-            <button
-              onClick={() => {
-                hostChanRef.current?.send({ type: "broadcast", event: "force_page", payload: { exhibitId, page: currentPage } });
-                if (sessionId) logSessionEvent(sessionId, "page_direct", { actor_role: "host", notes: `Directed witness to page ${currentPage}` });
-              }}
-              style={{
-                background: GOLD, color: NAVY, border: "none",
-                borderRadius: 6, padding: "5px 14px", fontSize: 11,
-                fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-              }}>
-              ⬆ Direct witness to page {currentPage}
-            </button>
+            {sessionId && !markup && (
+              <button
+                onClick={() => {
+                  setMarkupStrokes([]);
+                  setMarkup({ page: currentPage });
+                  hostChanRef.current?.send({ type: "broadcast", event: "annotation_start", payload: { exhibitId, page: currentPage } });
+                  logSessionEvent(sessionId, "witness_markup_started", { actor_role: "host", notes: `Witness asked to mark page ${currentPage}` });
+                }}
+                style={{
+                  background: "transparent", border: "1px solid #5C3A7A", color: "#C07EE8",
+                  borderRadius: 6, padding: "5px 14px", fontSize: 11,
+                  fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                ✏️ Witness markup
+              </button>
+            )}
+            {sessionId && markup && (
+              <>
+                <span style={{ fontSize: 11, color: "#C07EE8", fontWeight: 600 }}>
+                  Witness marking page {markup.page} · {markupStrokes.length} mark{markupStrokes.length !== 1 ? "s" : ""}
+                </span>
+                <button
+                  onClick={() => {
+                    hostChanRef.current?.send({ type: "broadcast", event: "annotation_end", payload: { exhibitId } });
+                    const strokes = markupStrokes;
+                    setMarkup(null);
+                    setMarkupStrokes([]);
+                    if (strokes.length > 0) onSaveMarkup?.(strokes);
+                  }}
+                  style={{
+                    background: GREEN, color: NAVY, border: "none",
+                    borderRadius: 6, padding: "5px 14px", fontSize: 11,
+                    fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  ✓ Save markup
+                </button>
+                <button
+                  onClick={() => {
+                    hostChanRef.current?.send({ type: "broadcast", event: "annotation_end", payload: { exhibitId } });
+                    setMarkup(null);
+                    setMarkupStrokes([]);
+                  }}
+                  style={{
+                    background: "transparent", border: "1px solid #5C1A1A", color: "#F87171",
+                    borderRadius: 6, padding: "5px 10px", fontSize: 11,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  ✕ Discard
+                </button>
+              </>
+            )}
+            {!markup && (
+              <button
+                onClick={() => {
+                  hostChanRef.current?.send({ type: "broadcast", event: "force_page", payload: { exhibitId, page: currentPage } });
+                  if (sessionId) logSessionEvent(sessionId, "page_direct", { actor_role: "host", notes: `Directed witness to page ${currentPage}` });
+                }}
+                style={{
+                  background: GOLD, color: NAVY, border: "none",
+                  borderRadius: 6, padding: "5px 14px", fontSize: 11,
+                  fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                }}>
+                ⬆ Direct witness to page {currentPage}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -279,6 +438,9 @@ export default function PDFViewer({
               scale={scale}
               rotation={rotation}
               isActive={pageNum === currentPage}
+              markupStrokes={markupStrokes.filter(s => s.page === pageNum)}
+              markupActive={isWitness && markup?.page === pageNum}
+              onMarkupStroke={handleMarkupStroke}
             />
           </div>
         ))}

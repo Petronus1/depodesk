@@ -25,7 +25,11 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 - `src/depodesk-witness.jsx`, `-opposing-counsel.jsx`,
   `-court-reporter.jsx` — participant views (admission-gated)
 - `src/depodesk-pdfviewer.jsx` — shared PDF viewer (pdfjs-dist), page
-  sync host→witness, rotate control, white canvas background
+  sync host→witness, rotate control, white canvas background, and
+  witness markup: host starts/saves/discards from the toolbar, witness
+  draws (page-normalized strokes), strokes stream live on the
+  `annotate:<session id>` private topic (the ONLY topic approved
+  participants may send on)
 - `src/depodesk-session-panel.jsx` — floating live-session panel
   (participants passed in as a prop from the app's poll)
 - `src/depodesk-session-history.jsx` — 🕓 History modal: per-session
@@ -33,7 +37,10 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 - `src/depodesk-stamp.js` — burns the court-reporter exhibit sticker
   (yellow, "EXHIBIT" + case-wide number, no date — exhibits are reused
   across depos) onto page 1 at mark time; stamped copy becomes
-  `file_path`, original kept as `original_path`
+  `file_path`, original kept as `original_path`. Also `flattenMarkup`:
+  burns saved witness strokes into the PDF; the result is added as a
+  NEW exhibit "<name> — as marked by witness" in the deposition.
+  Both assume unrotated pages (v1 limitation).
 - `src/depodesk-schema.sql` — AUTHORITATIVE schema (rebuilt from prod
   introspection; keep in sync when changing the DB)
 - `src/depodesk-rls-migration.sql`, `src/depodesk-realtime-migration.sql`
