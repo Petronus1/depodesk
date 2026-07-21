@@ -119,6 +119,17 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 
 ## Known gaps / backlog
 
+- UI: the floating "Live Session" panel (`depodesk-session-panel.jsx`,
+  `position: fixed; right:16; top:60`) overlaps/blocks the header
+  controls (History, + Exhibit, participants, session buttons) even when
+  minimized. Reposition or shrink the minimized state so it doesn't
+  cover clickable header buttons.
+- UI: revisit the exhibit "Search" field (exhibit-list panel in
+  `depo-exhibit-app.jsx`) — Ryan wants to discuss changes (scope TBD).
+- Feature: manual override of exhibit numbering. Today `markExhibit`
+  (`depo-exhibit-app.jsx`) auto-assigns the next case-wide number; Ryan
+  wants to discuss letting counsel set/override the number at mark time
+  (interacts with the case-wide series and the #5 numbering-schemes item).
 - PIN brute-force hardening (6 digits, anon-callable lookup).
 - Periodic purge of anonymous auth users (query in schema file).
 - `/reset-password` route missing (forgot-password emails dead-end).
