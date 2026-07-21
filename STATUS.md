@@ -85,7 +85,8 @@ export → session end broadcast.
 2. ~~Witness annotation~~ ✅
 3. ~~Post-deposition exhibit package — zip of stamped exhibits + audit
    PDF + cover index~~ ✅ (migration pending production application)
-4. Opposing counsel presentation while holding control
+4. ~~Opposing counsel presentation while holding control~~ ✅ (same
+   case-wide number series; host marks OC exhibits into the record)
 5. Numbering schemes (Plaintiff's/Defendant's prefixes, pre-marking)
 6. Second chair / co-counsel (case_members table exists, no UI)
 7. Email invites, witness-screen callouts, per-role exhibit downloads

@@ -535,6 +535,9 @@ export default function App() {
   const exhibits   = isLibrary ? (activeCase?.library || []) : (activeDepo?.exhibits || []);
   const activeExhibit = exhibits.find(e => e.id === activeExhibitId);
   const sharedExhibit = exhibits.find(e => e.id === sharedId);
+  // When control is with opposing counsel, the host cannot present
+  // (share / drive pages / start witness markup) until reclaiming it.
+  const ocHasControl = activeSession?.controller_role === "opposing_counsel";
 
   const filtered = exhibits.filter(e =>
     e.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -632,6 +635,32 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeSession?.id]);
 
+  // Ingest exhibits presented by opposing counsel (while they hold
+  // control). The host receives the push on the session channel, adds
+  // the document to this deposition, displays it, and logs the audit
+  // event (participants can't write session_events themselves).
+  useEffect(() => {
+    if (!activeSession?.id) return;
+    const ch = privateChannel(`session:${activeSession.id}`)
+      .on("broadcast", { event: "exhibit_push" }, ({ payload }) => {
+        const ex = payload?.exhibit;
+        if (!ex || ex.introducedBy !== "opposing_counsel") return;
+        ingestOcExhibit(ex);
+        setActiveCaseId(activeSession.localCaseId);
+        if (activeSession.localDepoId) setActiveDepoId(activeSession.localDepoId);
+        setActiveExhibitId(ex.id);
+        notify(`Opposing counsel presented "${ex.name}"`, "#C07EE8");
+        logSessionEvent(activeSession.id, "exhibit_shared", {
+          exhibit_name: ex.name,
+          exhibit_num: null,
+          actor_name: ex.presenterName || "Opposing Counsel",
+          actor_role: "opposing_counsel",
+        });
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [activeSession?.id]);
+
   // Rehydrate the viewing URL after a refresh: blob/signed URLs die with
   // the page, but the file lives on in storage at exhibit.file_path.
   useEffect(() => {
@@ -711,6 +740,34 @@ export default function App() {
           d.id === activeDepoId ? { ...d, exhibits: fn(d.exhibits) } : d
         ),
       };
+    }));
+  }
+
+  // Add an opposing-counsel-presented document to the session's
+  // deposition (or the case library if the session is on the library),
+  // de-duplicated by id. Provenance is persisted as `introducedBy`.
+  function ingestOcExhibit(ex) {
+    const localCaseId = activeSession?.localCaseId;
+    const localDepoId = activeSession?.localDepoId;
+    if (!localCaseId) return;
+    const newEx = {
+      id: ex.id, label: null, exhibitNum: null,
+      name: ex.name, type: ex.type || "PDF",
+      date: new Date().toISOString().slice(0, 10),
+      tags: ["opposing-counsel"],
+      fileUrl: null, file_path: ex.file_path || null,
+      marked: false, introducedBy: "opposing_counsel",
+    };
+    updateCases(prev => prev.map(c => {
+      if (c.id !== localCaseId) return c;
+      if (localDepoId && localDepoId !== "__library__") {
+        return { ...c, depositions: (c.depositions || []).map(d =>
+          d.id === localDepoId
+            ? (d.exhibits.some(e => e.id === ex.id) ? d : { ...d, exhibits: [...d.exhibits, newEx] })
+            : d) };
+      }
+      if ((c.library || []).some(e => e.id === ex.id)) return c;
+      return { ...c, library: [...(c.library || []), newEx] };
     }));
   }
 
@@ -915,7 +972,8 @@ async function shareExhibit(id) {
     }
 
     if (activeSession) {
-      await logSessionEvent(activeSession.id, "exhibit_marked", {
+      const isOc = ex?.introducedBy === "opposing_counsel";
+      const event = await logSessionEvent(activeSession.id, "exhibit_marked", {
         exhibit_id: ex?.id,
         exhibit_name: ex?.name || null,
         exhibit_num: nextNum,
@@ -923,7 +981,15 @@ async function shareExhibit(id) {
         exhibit_file_name: canonicalName,
         exhibit_mime_type: canonicalMime,
         actor_role: "host",
+        notes: isOc ? "Introduced by opposing counsel" : null,
       });
+      // Also broadcast on the session channel so opposing counsel's
+      // Introduced Exhibits log updates live and carries the file path.
+      if (event) {
+        await privateChannel(`session:${activeSession.id}`).send({
+          type: "broadcast", event: "exhibit_marked", payload: { event },
+        });
+      }
     }
   }
 
@@ -1299,6 +1365,7 @@ async function shareExhibit(id) {
                         }
                         {ex.marked && <span style={{ fontSize: 9, background: "#0D2D1A", color: "#4CAF82", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>✓</span>}
                         {isShared && <span style={{ fontSize: 9, background: "#0D2D1A", color: "#4CAF82", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>LIVE</span>}
+                        {ex.introducedBy === "opposing_counsel" && <span style={{ fontSize: 9, background: "#2D1E3A", color: "#C07EE8", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>OC</span>}
                         {(ex.fileUrl || ex.file_path) && <span style={{ fontSize: 9, background: "#1E3A5F", color: "#7EB3E8", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>FILE</span>}
                         {annCount > 0 && <span style={{ fontSize: 9, background: "#2D1E3A", color: "#C07EE8", borderRadius: 3, padding: "1px 4px", fontWeight: 600 }}>✏{annCount}</span>}
                       </div>
@@ -1348,12 +1415,18 @@ async function shareExhibit(id) {
                   {!activeExhibit.marked && (
                     <button onClick={() => markExhibit(activeExhibit.id)} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 6, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Mark</button>
                   )}
-                  <button onClick={() => sharedId === activeExhibit.id ? stopSharing() : shareExhibit(activeExhibit.id)} style={{
-                    background: sharedId === activeExhibit.id ? "#0D2D1A" : "#C9A84C",
-                    border: sharedId === activeExhibit.id ? "1px solid #2A5C3A" : "none",
-                    color: sharedId === activeExhibit.id ? "#4CAF82" : "#0F1B2D",
-                    borderRadius: 6, padding: "5px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                  }}>{sharedId === activeExhibit.id ? "✓ Stop Sharing" : "Share with All"}</button>
+                  {ocHasControl && sharedId !== activeExhibit.id ? (
+                    <span title="Opposing counsel has control — reclaim it from the session panel to present" style={{ fontSize: 11, color: "#C07EE8", border: "1px solid #5C3A7A", background: "#2D1E3A", borderRadius: 6, padding: "5px 11px", fontWeight: 600 }}>
+                      Opposing counsel has control
+                    </span>
+                  ) : (
+                    <button onClick={() => sharedId === activeExhibit.id ? stopSharing() : shareExhibit(activeExhibit.id)} style={{
+                      background: sharedId === activeExhibit.id ? "#0D2D1A" : "#C9A84C",
+                      border: sharedId === activeExhibit.id ? "1px solid #2A5C3A" : "none",
+                      color: sharedId === activeExhibit.id ? "#4CAF82" : "#0F1B2D",
+                      borderRadius: 6, padding: "5px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    }}>{sharedId === activeExhibit.id ? "✓ Stop Sharing" : "Share with All"}</button>
+                  )}
                 </div>
               </div>
 
@@ -1377,7 +1450,7 @@ async function shareExhibit(id) {
                   <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", flexDirection: "column" }}>
                     {activeExhibit.type === "Image"
                       ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={activeExhibit.fileUrl} alt={activeExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                     : <PDFViewer url={activeExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={activeExhibit.id} onSaveMarkup={handleWitnessMarkup} />
+                     : <PDFViewer url={activeExhibit.fileUrl} mode="host" sessionId={activeSession?.id} exhibitId={activeExhibit.id} onSaveMarkup={handleWitnessMarkup} hostControlsEnabled={!ocHasControl} />
                     }
                     {showAnnotations && <AnnotationLayer exhibitId={activeExhibit.id} tool={annTool} color={annColor} annotations={annotations} setAnnotations={setAnnotations} />}
                   </div>

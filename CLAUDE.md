@@ -23,7 +23,12 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   the `privateChannel()` helper + `logSessionEvent`
 - `src/depodesk-join.jsx` — PIN join flow (anonymous sign-in happens here)
 - `src/depodesk-witness.jsx`, `-opposing-counsel.jsx`,
-  `-court-reporter.jsx` — participant views (admission-gated)
+  `-court-reporter.jsx` — participant views (admission-gated). Opposing
+  counsel can PRESENT a document while holding control (upload → push →
+  host-mode viewer to drive page sync); the host ingests the push as a
+  new exhibit (tagged `introducedBy: 'opposing_counsel'`, "OC" chip) and
+  marks it into the SAME case-wide series. OC can also re-open any marked
+  exhibit's file from the Introduced Exhibits tab (read; not control-gated).
 - `src/depodesk-pdfviewer.jsx` — shared PDF viewer (pdfjs-dist), page
   sync host→witness, rotate control, white canvas background, and
   witness markup: host starts/saves/discards from the toolbar, witness
@@ -58,7 +63,9 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 - Storage paths are `<case_uuid>/<exhibit_id>.<ext>` in the private
   `exhibits` bucket; policies match the folder to an owned/member case
   (`can_access_case_files`), reads also allow approved participants of
-  an active session (`can_read_case_files`).
+  an active session (`can_read_case_files`), and INSERT is additionally
+  allowed for the opposing-counsel participant who holds control
+  (`can_write_oc_file` — insert-only, so they can't overwrite host files).
 - Exhibit `fileUrl` is a transient blob/signed URL; the durable pointer
   is `file_path`. Selecting an exhibit rehydrates a signed URL.
 - `sessions` have `pin` (6-digit, unique among active), `controller_role`,
@@ -81,9 +88,13 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   on the participant row and drives realtime + storage read access.
 - **All broadcast channels are private** (`privateChannel()` — topics
   `session:<id>`, `pdf-sync:<id>`, `reporter:<id>`). RLS on
-  `realtime.messages`: hosts send/receive, approved participants
-  receive. The SessionPanel `participants:<id>` postgres_changes channel
-  stays public (no broadcasts, table RLS applies).
+  `realtime.messages`: hosts send/receive; approved participants
+  receive, and may SEND only on `annotate:<id>` (witness markup) — plus
+  the opposing-counsel participant who holds control may also send on
+  `session:`/`pdf-sync:` to present (`can_present_as_oc`, gated on
+  `sessions.controller_role='opposing_counsel'`). The SessionPanel
+  `participants:<id>` postgres_changes channel stays public (no
+  broadcasts, table RLS applies).
 - Gotcha that bit us twice: **RLS policy subqueries run as the caller**,
   so policies referencing host-only tables must use SECURITY DEFINER
   helper functions, and `INSERT … RETURNING` needs a select policy —
@@ -113,6 +124,14 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 - `/reset-password` route missing (forgot-password emails dead-end).
 - Reuse one subscribed channel per session instead of per-send
   `privateChannel()` instances; revoke blob object URLs.
+- Participant views' `connect()` effect subscribes inside an async
+  function, so React StrictMode (dev only) can double-subscribe. The
+  OC Introduced-Exhibits append is dedup-guarded by event id; a proper
+  fix is a per-effect `cancelled` flag that always removes its channel.
+- OC's live view of a HOST-pushed exhibit still uses an `<iframe>` (renders
+  in real browsers, not in the headless preview) and does not follow
+  host page-sync; the re-open modal and OC's own presentation use the
+  pdfjs `PDFViewer`.
 - Pre-existing lint: conditional `useCallback` after the `isWitness`
   early return in depo-exhibit-app.jsx (harmless, `isWitness` is stable).
 - Package exports for sessions created before `depodesk-package-migration.sql`

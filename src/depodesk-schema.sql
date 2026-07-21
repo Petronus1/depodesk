@@ -340,10 +340,10 @@ $$;
 
 -- Session details for an APPROVED participant of that session.
 create or replace function public.get_session_for_participant(p_session_id uuid, p_participant_id uuid)
-returns table (id uuid, pin text, is_active boolean, controller_role text, case_name text, case_number text)
+returns table (id uuid, pin text, is_active boolean, controller_role text, case_id uuid, case_name text, case_number text)
 language sql security definer set search_path = public
 as $$
-  select s.id, s.pin, s.is_active, s.controller_role, c.name, c.number
+  select s.id, s.pin, s.is_active, s.controller_role, s.case_id, c.name, c.number
     from public.sessions s
     left join public.cases c on c.id = s.case_id
    where s.id = p_session_id
@@ -426,9 +426,35 @@ $$;
 
 grant execute on function public.can_read_case_files(text) to authenticated;
 
+-- The opposing-counsel participant who currently holds control may
+-- INSERT (only) into the case folder, so they can present their own
+-- document. Insert-only means they cannot overwrite the host's files.
+create or replace function public.can_write_oc_file(p_name text)
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1
+      from public.sessions s
+      join public.participants p on p.session_id = s.id
+     where s.is_active
+       and s.controller_role = 'opposing_counsel'
+       and s.case_id::text = (storage.foldername(p_name))[1]
+       and p.auth_uid = auth.uid()
+       and p.role = 'opposing_counsel'
+       and p.status = 'approved'
+  )
+$$;
+
+grant execute on function public.can_write_oc_file(text) to anon, authenticated;
+
 create policy "Attorneys can upload exhibits"
   on storage.objects for insert to authenticated
   with check (bucket_id = 'exhibits' and public.can_access_case_files(name));
+
+create policy "Opposing counsel in control can upload"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'exhibits' and public.can_write_oc_file(name));
 
 create policy "Attorneys and participants can read exhibits"
   on storage.objects for select to authenticated
@@ -470,9 +496,31 @@ as $$
   )
 $$;
 
+-- True when the caller is the opposing-counsel participant who
+-- currently holds control of an active session. Gates OC presenting.
+create or replace function public.can_present_as_oc(p_session_id uuid)
+returns boolean
+language sql security definer set search_path = public
+as $$
+  select exists (
+    select 1
+      from public.sessions s
+      join public.participants p on p.session_id = s.id
+     where s.id = p_session_id
+       and s.is_active
+       and s.controller_role = 'opposing_counsel'
+       and p.auth_uid = auth.uid()
+       and p.role = 'opposing_counsel'
+       and p.status = 'approved'
+  )
+$$;
+
+grant execute on function public.can_present_as_oc(uuid) to anon, authenticated;
+
 -- Hosts may send on any of their session's topics. Approved
--- participants may send ONLY on annotate:<session id> (witness
--- markup strokes) — never session:/pdf-sync:/reporter:.
+-- participants may send on annotate:<session id> (witness markup),
+-- and the OC who holds control may also send on session:/pdf-sync:
+-- (present an exhibit + drive page sync) — never reporter:.
 create or replace function public.can_send_session_broadcasts(p_topic text)
 returns boolean
 language sql security definer set search_path = public
@@ -485,7 +533,9 @@ as $$
                 and exists (select 1 from public.participants p
                              where p.session_id = s.id
                                and p.auth_uid = auth.uid()
-                               and p.status = 'approved')))
+                               and p.status = 'approved'))
+            or (split_part(p_topic, ':', 1) in ('session', 'pdf-sync')
+                and public.can_present_as_oc(s.id)))
   )
 $$;
 

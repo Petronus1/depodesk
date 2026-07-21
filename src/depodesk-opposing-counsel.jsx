@@ -8,7 +8,8 @@
 // ============================================================
 
 import { useState, useEffect, useRef } from "react";
-import { supabase, getExhibitFileUrl, privateChannel } from "./depodesk-supabase";
+import { supabase, getExhibitFileUrl, privateChannel, uploadExhibitFile } from "./depodesk-supabase";
+import PDFViewer from "./depodesk-pdfviewer";
 
 const GOLD   = "#C9A84C";
 const NAVY   = "#0F1B2D";
@@ -26,7 +27,14 @@ export default function OpposingCounselView() {
   const [fileUrl, setFileUrl]         = useState(null);
   const [status, setStatus]           = useState("connecting");
   const [activeTab, setActiveTab]     = useState("exhibit"); // exhibit | log
+  const [hasControl, setHasControl]   = useState(false);
+  const [caseId, setCaseId]           = useState(null);
+  const [myPresented, setMyPresented] = useState(null); // { id, name, type, file_path, fileUrl } while OC presents
+  const [presentBusy, setPresentBusy] = useState(false);
+  const [reopened, setReopened]       = useState(null); // { name, num, url, type } marked file in modal
   const unsubRef                      = useRef(null);
+  const chanRef                       = useRef(null);   // subscribed session channel for OC sends
+  const fileInputRef                  = useRef(null);
 
   const sessionId     = sessionStorage.getItem("depo_session_id");
   const participantId = sessionStorage.getItem("depo_participant_id");
@@ -58,7 +66,10 @@ export default function OpposingCounselView() {
         const { data: sessRows } = await supabase.rpc("get_session_for_participant", {
           p_session_id: sessionId, p_participant_id: participantId,
         });
-        setSession(sessRows?.[0] ?? null);
+        const sess = sessRows?.[0] ?? null;
+        setSession(sess);
+        setCaseId(sess?.case_id ?? null);
+        setHasControl(sess?.controller_role === "opposing_counsel");
 
         // Load already-introduced exhibits from session events
         const { data: events } = await supabase.rpc("get_session_events", {
@@ -71,6 +82,9 @@ export default function OpposingCounselView() {
         // Subscribe to realtime
         const channel = privateChannel(`session:${sessionId}`)
           .on("broadcast", { event: "exhibit_push" }, ({ payload }) => {
+            // OC does not receive its own broadcasts; a push here is the
+            // host presenting, which supersedes OC's own presentation.
+            setMyPresented(null);
             if (!payload.exhibit) { setCurrentExhibit(null); setFileUrl(null); return; }
             setCurrentExhibit(payload.exhibit);
             setStatus("live");
@@ -81,14 +95,21 @@ export default function OpposingCounselView() {
             }
           })
           .on("broadcast", { event: "exhibit_marked" }, ({ payload }) => {
-            setIntroducedExhibits(prev => [...prev, payload.event]);
+            setIntroducedExhibits(prev =>
+              prev.some(e => e.id && e.id === payload.event?.id) ? prev : [...prev, payload.event]);
+          })
+          .on("broadcast", { event: "control_transferred" }, ({ payload }) => {
+            const oc = payload.controller_role === "opposing_counsel";
+            setHasControl(oc);
+            if (!oc) setMyPresented(null); // lost control → stop presenting
           })
           .on("broadcast", { event: "session_ended" }, () => {
             setStatus("ended");
           })
           .subscribe();
 
-        unsubRef.current = () => supabase.removeChannel(channel);
+        chanRef.current = channel;
+        unsubRef.current = () => { supabase.removeChannel(channel); chanRef.current = null; };
       } catch (err) {
         setStatus("error");
       }
@@ -110,6 +131,57 @@ export default function OpposingCounselView() {
     }, 5000);
     return () => clearInterval(interval);
   }, [status]);
+
+  // Present a document (only permitted while OC holds control). Upload to
+  // the case folder, then broadcast an exhibit_push. The host ingests the
+  // push and logs the audit event (participants can't write session_events).
+  async function presentDocument(file) {
+    if (!file || !caseId || !hasControl) return;
+    setPresentBusy(true);
+    try {
+      const isImage = file.type.includes("image");
+      const id   = `oc-${Date.now()}`;
+      const path = await uploadExhibitFile(caseId, id, file);
+      const url  = await getExhibitFileUrl(path);
+      const exhibit = {
+        id, name: file.name.replace(/\.[^.]+$/, ""),
+        type: isImage ? "Image" : "PDF",
+        file_path: path,
+        introducedBy: "opposing_counsel",
+        presenterName: name || "Opposing Counsel",
+        marked: false, exhibitNum: null,
+      };
+      await chanRef.current?.send({ type: "broadcast", event: "exhibit_push", payload: { exhibit } });
+      setMyPresented({ ...exhibit, fileUrl: url });
+      setCurrentExhibit(null);
+      setStatus("live");
+    } catch (err) {
+      console.error("Failed to present document:", err);
+      alert("Could not present the document — you may not currently hold control.");
+    } finally {
+      setPresentBusy(false);
+    }
+  }
+
+  async function stopPresenting() {
+    await chanRef.current?.send({ type: "broadcast", event: "exhibit_push", payload: { exhibit: null } });
+    setMyPresented(null);
+  }
+
+  // Re-open the (stamped) file of any already-marked exhibit — a read,
+  // available regardless of control state.
+  async function reopenMarked(ev) {
+    if (!ev?.exhibit_file_path) return;
+    try {
+      const url = await getExhibitFileUrl(ev.exhibit_file_path);
+      setReopened({
+        name: ev.exhibit_name, num: ev.exhibit_num, url,
+        type: ev.exhibit_mime_type?.includes("image") ? "Image" : "PDF",
+      });
+    } catch (err) {
+      console.error("Could not open marked exhibit:", err);
+    }
+  }
 
   if (status === "pending") {
     return (
@@ -177,6 +249,14 @@ export default function OpposingCounselView() {
 <span style={{ fontSize: 11, background: "#131F33", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "2px 8px", color: DIM, fontFamily: "monospace", letterSpacing: "2px" }}>
   PIN {sessionStorage.getItem("depo_pin")}
 </span>
+          {status !== "ended" && (
+            <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 4, padding: "2px 8px",
+              background: hasControl ? "#2D1E3A" : "#131F33",
+              border: `1px solid ${hasControl ? "#5C3A7A" : BORDER}`,
+              color: hasControl ? "#C07EE8" : DIM }}>
+              {hasControl ? "You have control" : "Read-only"}
+            </span>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: status === "ended" ? "#F87171" : GREEN }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: status === "ended" ? "#F87171" : GREEN, animation: status !== "ended" ? "pulse 1.5s infinite" : "none" }} />
             {status === "ended" ? "Session ended" : "Connected"}
@@ -200,13 +280,56 @@ export default function OpposingCounselView() {
         ))}
       </div>
 
+      {/* Present toolbar — only while OC holds control */}
+      {hasControl && activeTab === "exhibit" && status !== "ended" && (
+        <div style={{ background: "#0A1628", borderBottom: `1px solid ${BORDER}`, padding: "8px 20px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: "#C07EE8", fontWeight: 600 }}>You may present exhibits</span>
+          <input ref={fileInputRef} type="file" accept=".pdf,image/*" style={{ display: "none" }}
+            onChange={e => { if (e.target.files[0]) presentDocument(e.target.files[0]); e.target.value = ""; }} />
+          {!myPresented ? (
+            <button disabled={presentBusy || !caseId} onClick={() => fileInputRef.current?.click()} style={{
+              background: presentBusy ? "#2D1E3A" : "#C07EE8", color: presentBusy ? "#C07EE8" : NAVY,
+              border: "none", borderRadius: 6, padding: "5px 13px", fontSize: 12, fontWeight: 700,
+              cursor: presentBusy ? "default" : "pointer", fontFamily: "inherit",
+            }}>{presentBusy ? "Uploading…" : "＋ Present a document"}</button>
+          ) : (
+            <button onClick={stopPresenting} style={{
+              background: "#0D2D1A", border: "1px solid #2A5C3A", color: GREEN,
+              borderRadius: 6, padding: "5px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>✓ Stop presenting</button>
+          )}
+          <span style={{ marginLeft: "auto", fontSize: 11, color: DIM }}>The attorney marks presented exhibits into the record.</span>
+        </div>
+      )}
+
       {/* Content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Current Exhibit tab */}
         {activeTab === "exhibit" && (
           <>
-            {currentExhibit && (
+            {/* OC is presenting their own document */}
+            {myPresented && (
+              <>
+                <div style={{ background: NAVY, borderBottom: `1px solid ${BORDER}`, padding: "10px 20px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#E8EDF5" }}>{myPresented.name}</div>
+                    <div style={{ fontSize: 11, color: "#C07EE8", marginTop: 2 }}>You are presenting this document</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#C07EE8" }}>
+                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#C07EE8", animation: "pulse 1.5s infinite" }} />
+                    Live to all
+                  </div>
+                </div>
+                <div style={{ flex: 1, overflow: "hidden" }}>
+                  {myPresented.type === "Image"
+                    ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={myPresented.fileUrl} alt={myPresented.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
+                    : <PDFViewer url={myPresented.fileUrl} mode="host" sessionId={sessionId} exhibitId={myPresented.id} allowWitnessMarkup={false} />}
+                </div>
+              </>
+            )}
+
+            {!myPresented && currentExhibit && (
               <div style={{ background: NAVY, borderBottom: `1px solid ${BORDER}`, padding: "10px 20px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
                 {currentExhibit.marked && (
                   <div style={{ border: `2px solid ${GOLD}`, borderRadius: 4, padding: "3px 10px", textAlign: "center", flexShrink: 0 }}>
@@ -263,20 +386,28 @@ export default function OpposingCounselView() {
                 <div style={{ fontSize: 11, color: DIM, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 16 }}>
                   {introducedExhibits.length} Exhibit{introducedExhibits.length !== 1 ? "s" : ""} Introduced
                 </div>
-                {introducedExhibits.map((ev, i) => (
-                  <div key={ev.id || i} style={{ padding: "12px 16px", background: NAVY, border: `1px solid ${BORDER}`, borderRadius: 8, marginBottom: 8, display: "flex", alignItems: "center", gap: 14 }}>
-                    <div style={{ border: `1px solid ${GOLD}`, borderRadius: 4, padding: "2px 8px", textAlign: "center", flexShrink: 0 }}>
-                      <div style={{ fontSize: 8, color: GOLD, fontWeight: 800, letterSpacing: "1px" }}>EX.</div>
-                      <div style={{ fontSize: 16, fontWeight: 900, color: GOLD, lineHeight: 1 }}>{ev.exhibit_num}</div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#E8EDF5" }}>{ev.exhibit_name}</div>
-                      <div style={{ fontSize: 11, color: DIM, marginTop: 2 }}>
-                        Marked by {ev.actor_name} · {new Date(ev.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {introducedExhibits.map((ev, i) => {
+                  const hasFile = !!ev.exhibit_file_path;
+                  return (
+                    <div key={ev.id || i} onClick={() => hasFile && reopenMarked(ev)} style={{
+                      padding: "12px 16px", background: NAVY, border: `1px solid ${BORDER}`, borderRadius: 8, marginBottom: 8,
+                      display: "flex", alignItems: "center", gap: 14,
+                      cursor: hasFile ? "pointer" : "default",
+                    }}>
+                      <div style={{ border: `1px solid ${GOLD}`, borderRadius: 4, padding: "2px 8px", textAlign: "center", flexShrink: 0 }}>
+                        <div style={{ fontSize: 8, color: GOLD, fontWeight: 800, letterSpacing: "1px" }}>EX.</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, color: GOLD, lineHeight: 1 }}>{ev.exhibit_num}</div>
                       </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#E8EDF5" }}>{ev.exhibit_name}</div>
+                        <div style={{ fontSize: 11, color: DIM, marginTop: 2 }}>
+                          Marked by {ev.actor_name} · {new Date(ev.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </div>
+                      {hasFile && <span style={{ fontSize: 11, color: GOLD, flexShrink: 0 }}>Open →</span>}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -285,8 +416,29 @@ export default function OpposingCounselView() {
 
       <div style={{ background: NAVY, borderTop: `1px solid ${BORDER}`, padding: "7px 20px", display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
         <span style={{ fontSize: 11, color: DIM }}>{session?.case_name}</span>
-        <span style={{ fontSize: 11, color: "#1E3254" }}>Opposing Counsel · Read-only</span>
+        <span style={{ fontSize: 11, color: "#1E3254" }}>Opposing Counsel · {hasControl ? "Presenting" : "Read-only"}</span>
       </div>
+
+      {/* Re-open a marked exhibit's file */}
+      {reopened && (
+        <div onClick={() => setReopened(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", zIndex: 400, display: "flex", flexDirection: "column", padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: DARK, border: `1px solid ${BORDER}`, borderRadius: 10, flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ background: NAVY, borderBottom: `1px solid ${BORDER}`, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+              <div style={{ border: `2px solid ${GOLD}`, borderRadius: 4, padding: "2px 10px", textAlign: "center" }}>
+                <div style={{ fontSize: 8, color: GOLD, fontWeight: 800, letterSpacing: "1.5px" }}>EXHIBIT</div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: GOLD, lineHeight: 1.1 }}>{reopened.num}</div>
+              </div>
+              <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{reopened.name}</div>
+              <button onClick={() => setReopened(null)} style={{ background: "transparent", border: `1px solid ${BORDER}`, color: MUTED, borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>Close</button>
+            </div>
+            <div style={{ flex: 1, overflow: "hidden", background: "#1A1A1A", display: "flex", flexDirection: "column" }}>
+              {reopened.type === "Image"
+                ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={reopened.url} alt={reopened.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
+                : <PDFViewer url={reopened.url} mode="witness" sessionId={null} exhibitId={`reopen-${reopened.num}`} />}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }

@@ -158,6 +158,8 @@ export default function PDFViewer({
   exhibitId,
   onPageChange,         // optional callback for parent
   onSaveMarkup,         // host: called with witness strokes on "Save markup"
+  hostControlsEnabled = true, // gate page-drive (off when someone else holds control)
+  allowWitnessMarkup = true,  // gate the witness-markup feature (host-only; off for OC)
 }) {
   const [pdfDoc, setPdfDoc]         = useState(null);
   const [numPages, setNumPages]     = useState(0);
@@ -346,11 +348,18 @@ export default function PDFViewer({
           </span>
         )}
 
+        {/* Host but control is with opposing counsel: no present actions */}
+        {isHost && !hostControlsEnabled && (
+          <span style={{ marginLeft: "auto", fontSize: 11, color: "#C07EE8", fontWeight: 600 }}>
+            Opposing counsel has control
+          </span>
+        )}
+
         {/* Host: direct witness + witness markup controls */}
-        {isHost && (
+        {isHost && hostControlsEnabled && (
           <>
             <div style={{ marginLeft: "auto" }} />
-            {sessionId && !markup && (
+            {sessionId && !markup && allowWitnessMarkup && (
               <button
                 onClick={() => {
                   setMarkupStrokes([]);
