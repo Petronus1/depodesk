@@ -1,11 +1,11 @@
 // ============================================================
 // DepoDesk — Supabase Client Layer
 // ============================================================
-// SETUP:
-//   1. npm install @supabase/supabase-js
-//   2. Replace SUPABASE_URL and SUPABASE_ANON_KEY below
-//      (find these in Supabase Dashboard → Settings → API)
-//   3. Import functions from this file into your React app
+// The URL and anon (publishable) key below are the single source
+// of truth. The publishable key is public by design — it ships in
+// the browser bundle and is safe to commit; row-level security,
+// not this key, is what protects data. Find both in the Supabase
+// Dashboard → Settings → API.
 // ============================================================
 
 import { createClient } from "@supabase/supabase-js";
