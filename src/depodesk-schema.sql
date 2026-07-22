@@ -295,14 +295,17 @@ $$;
 -- Participant ids are unguessable UUIDs handed out at join time;
 -- these functions treat them as bearer credentials.
 
--- Join step 1: look up a session by PIN (includes case caption).
+-- Join step 1: validate a PIN. Returns ONLY the session id + pin.
+-- The case caption is intentionally withheld until admission (it
+-- contains party names); an anon caller with a valid PIN must still
+-- be approved by the host before get_session_for_participant will
+-- disclose the caption.
 create or replace function public.join_session_by_pin(p_pin text)
-returns table (id uuid, pin text, case_name text, case_number text)
+returns table (id uuid, pin text)
 language sql security definer set search_path = public
 as $$
-  select s.id, s.pin, c.name, c.number
+  select s.id, s.pin
     from public.sessions s
-    left join public.cases c on c.id = s.case_id
    where s.pin = p_pin and s.is_active
 $$;
 
@@ -555,7 +558,11 @@ create policy "Hosts can send broadcasts"
 
 -- ── KNOWN GAPS (future passes) ───────────────────────────────
 -- * PINs are 6 digits and join_session_by_pin is anon-callable;
---   brute force is rate-limited only by Supabase.
+--   brute force is rate-limited only by Supabase. (As of
+--   2026-07-22 the PIN lookup no longer returns the case caption,
+--   so a failed brute force reveals only that a PIN is live, not
+--   whose deposition it is. Longer PINs + server-side lockout are
+--   still worth adding.)
 -- * Anonymous sign-ins accumulate one auth.users row per joining
 --   browser. Purge periodically:
 --     delete from auth.users

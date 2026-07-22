@@ -112,7 +112,7 @@ function PINStep({ onVerified }) {
     try {
       const { data, error } = await supabase.rpc("join_session_by_pin", { p_pin: pin });
       if (error || !data || data.length === 0) throw new Error("Invalid PIN or session has ended.");
-      onVerified(data[0]); // { id, pin, case_name, case_number }
+      onVerified(data[0]); // { id, pin } — caption withheld until admission
     } catch (err) {
       setError(err.message || "Invalid PIN. Please check with the attorney.");
     } finally {
@@ -190,13 +190,16 @@ function DetailsStep({ session, onJoined }) {
 
   return (
     <div>
+      {/* The case caption is intentionally NOT shown here: it names the
+          parties and is withheld until counsel admits the participant.
+          Approved participants see it in their role view. */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: "#E8EDF5", marginBottom: 4 }}>
-          {session.case_name || "Deposition"}
+          Request Access
         </div>
-        {session.case_number && (
-          <div style={{ fontSize: 12, color: DIM }}>{session.case_number}</div>
-        )}
+        <div style={{ fontSize: 12, color: MUTED }}>
+          PIN accepted — enter your details for counsel to admit you.
+        </div>
       </div>
 
       {error && (
