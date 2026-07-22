@@ -528,6 +528,8 @@ export default function App() {
   const saveTimer = useRef(null);
   const fileInputRef   = useRef();
   const attachInputRef = useRef();
+  const markingRef = useRef(false);                 // synchronous re-entrancy guard for markExhibit
+  const [markingId, setMarkingId] = useState(null); // exhibit id currently being marked (drives button state)
 
   const activeCase = cases.find(c => c.id === activeCaseId);
   const isLibrary  = activeDepoId === "__library__";
@@ -900,6 +902,17 @@ async function shareExhibit(id) {
   }
 
   async function markExhibit(id) {
+    // Guard against concurrent/double marks. nextNum is derived from a
+    // state snapshot below and this function awaits (stamp/upload/log)
+    // before that state settles; two marks in flight at once would read
+    // the same snapshot and assign the SAME exhibit number to the court
+    // record. The ref is a synchronous lock (state updates are async and
+    // would let a rapid second click slip through).
+    if (markingRef.current) return;
+    markingRef.current = true;
+    setMarkingId(id);
+    try {
+
     // Find the next available case-wide exhibit number
     const allMarked = [];
     const c = activeCase;
@@ -990,6 +1003,11 @@ async function shareExhibit(id) {
           type: "broadcast", event: "exhibit_marked", payload: { event },
         });
       }
+    }
+
+    } finally {
+      markingRef.current = false;
+      setMarkingId(null);
     }
   }
 
@@ -1411,7 +1429,7 @@ async function shareExhibit(id) {
                     {(activeExhibit.fileUrl || activeExhibit.file_path) ? "Replace" : "Attach File"}
                   </button>
                   {!activeExhibit.marked && (
-                    <button onClick={() => markExhibit(activeExhibit.id)} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 6, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Mark</button>
+                    <button onClick={() => markExhibit(activeExhibit.id)} disabled={markingId !== null} style={{ background: "transparent", border: "1px solid #2A5C3A", color: "#4CAF82", borderRadius: 6, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: markingId !== null ? "default" : "pointer", opacity: markingId !== null ? 0.5 : 1 }}>{markingId === activeExhibit.id ? "Marking…" : "Mark"}</button>
                   )}
                   {ocHasControl && sharedId !== activeExhibit.id ? (
                     <span title="Opposing counsel has control — reclaim it from the session panel to present" style={{ fontSize: 11, color: "#C07EE8", border: "1px solid #5C3A7A", background: "#2D1E3A", borderRadius: 6, padding: "5px 11px", fontWeight: 600 }}>
