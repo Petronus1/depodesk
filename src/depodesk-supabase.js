@@ -330,87 +330,11 @@ export function privateChannel(topic) {
   return supabase.channel(topic, { config: { private: true } });
 }
 
-/**
- * Start a new deposition session for a case.
- * Returns the session including witness_token (used in the witness URL).
- */
-export async function startSession(caseId) {
-  const user = await getCurrentUser();
-  if (!user) throw new Error("Not logged in");
-
-  // End any existing active sessions for this case first
-  await supabase
-    .from("sessions")
-    .update({ is_active: false, ended_at: new Date().toISOString() })
-    .eq("case_id", caseId)
-    .eq("is_active", true);
-
-  const { data, error } = await supabase
-    .from("sessions")
-    .insert({ case_id: caseId, host_id: user.id })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-  // data.witness_token → append to witness URL: /witness?token=data.witness_token
-}
-
-/**
- * Push an exhibit to all witnesses in a session.
- * Uses Supabase Realtime (replaces BroadcastChannel).
- */
-export async function pushExhibitToWitnesses(sessionId, exhibit) {
-  const channel = privateChannel(`session:${sessionId}`);
-  await channel.send({
-    type: "broadcast",
-    event: "exhibit_push",
-    payload: { exhibit },
-  });
-}
-
-/**
- * Subscribe to exhibit pushes as a witness.
- * Call this on the Witness View page.
- *
- * @example
- *   const unsub = subscribeToSession(token, (exhibit) => setShownExhibit(exhibit))
- *   // call unsub() on component unmount
- */
-export function subscribeToSession(sessionId, onExhibit) {
-  const channel = privateChannel(`session:${sessionId}`)
-    .on("broadcast", { event: "exhibit_push" }, ({ payload }) => {
-      onExhibit(payload.exhibit);
-    })
-    .subscribe();
-
-  return () => supabase.removeChannel(channel);
-}
-
-/**
- * End a deposition session.
- */
-export async function endSession(sessionId) {
-  const { error } = await supabase
-    .from("sessions")
-    .update({ is_active: false, ended_at: new Date().toISOString() })
-    .eq("id", sessionId);
-  if (error) throw error;
-}
-
-/**
- * Look up a session by witness token (no auth required).
- * Used by the Witness View to find which session to subscribe to.
- */
-export async function getSessionByToken(token) {
-  const { data, error } = await supabase
-    .from("sessions")
-    .select("*, cases(name, number)")
-    .eq("witness_token", token)
-    .eq("is_active", true)
-    .single();
-  if (error) throw error;
-  return data;
-}
+// NOTE: The legacy witness_token session flow (startSession,
+// pushExhibitToWitnesses, subscribeToSession, endSession,
+// getSessionByToken) was removed 2026-07-22. It predated the
+// host-only RLS lockdown and would fail for anonymous callers;
+// the current app uses startSessionWithPin + the PIN/RPC join flow.
 
 
 // ── REACT HOOKS ──────────────────────────────────────────────
@@ -556,7 +480,7 @@ export function useExhibits(caseId) {
  * Start a deposition session with a PIN.
  * Returns the session including the generated PIN.
  */
-export async function startSessionWithPin(caseId, depositionId) {
+export async function startSessionWithPin(caseId, _depositionId) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Not logged in");
 

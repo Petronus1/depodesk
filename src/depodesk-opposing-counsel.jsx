@@ -21,7 +21,6 @@ const GREEN  = "#4CAF82";
 
 export default function OpposingCounselView() {
   const [session, setSession]         = useState(null);
-  const [participant, setParticipant] = useState(null);
   const [currentExhibit, setCurrentExhibit] = useState(null);
   const [introducedExhibits, setIntroducedExhibits] = useState([]);
   const [fileUrl, setFileUrl]         = useState(null);

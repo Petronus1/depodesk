@@ -35,7 +35,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const GOLD  = "#C9A84C";
 const NAVY  = "#0F1B2D";
-const DARK  = "#0A1628";
 const BORDER = "#1E3254";
 const MUTED  = "#7A93B8";
 const DIM    = "#4A6080";
@@ -156,7 +155,7 @@ export default function PDFViewer({
   mode = "host",        // "host" (attorney) | "witness"
   sessionId,
   exhibitId,
-  onPageChange,         // optional callback for parent
+  _onPageChange,        // optional callback for parent (reserved; unused)
   onSaveMarkup,         // host: called with witness strokes on "Save markup"
   hostControlsEnabled = true, // gate page-drive (off when someone else holds control)
   allowWitnessMarkup = true,  // gate the witness-markup feature (host-only; off for OC)
@@ -472,10 +471,4 @@ const btnStyle = {
   cursor: "pointer", fontSize: 15, fontFamily: "inherit",
   display: "flex", alignItems: "center", justifyContent: "center",
   padding: 0,
-};
-
-const toggleBtn = {
-  borderRadius: 5, padding: "4px 10px", fontSize: 11,
-  fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-  transition: "all 0.15s",
 };

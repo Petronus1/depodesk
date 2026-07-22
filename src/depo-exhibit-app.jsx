@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import SessionPanel from "./depodesk-session-panel"
 import { startSessionWithPin, endSessionAndNotify, transferControl, uploadExhibitFile, createCase as createRemoteCase, logSessionEvent, privateChannel, getExhibitFileUrl } from "./depodesk-supabase"
 import SessionHistory from "./depodesk-session-history"
@@ -1123,13 +1123,11 @@ async function shareExhibit(id) {
     notify("Reset to sample data");
   }
 
-  const onDrop = useCallback((e) => {
+  function onDrop(e) {
     e.preventDefault(); setDragOver(false);
     const file = e.dataTransfer.files[0];
     if (file && activeExhibitId) attachFile(activeExhibitId, file);
-  }, [activeExhibitId, exhibits]);
-
-  const hasAnnotations = activeExhibitId && ((annotations[activeExhibitId]?.strokes?.length || 0) + (annotations[activeExhibitId]?.notes?.length || 0)) > 0;
+  }
 
   const inputStyle = { width: "100%", background: "#0A1628", border: "1px solid #1E3254", borderRadius: 6, padding: "8px 12px", color: "#E8EDF5", fontSize: 13, outline: "none", boxSizing: "border-box" };
 
