@@ -119,11 +119,10 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 
 ## Known gaps / backlog
 
-- UI: the floating "Live Session" panel (`depodesk-session-panel.jsx`,
-  `position: fixed; right:16; top:60`) overlaps/blocks the header
-  controls (History, + Exhibit, participants, session buttons) even when
-  minimized. Reposition or shrink the minimized state so it doesn't
-  cover clickable header buttons.
+- ~~UI: the floating "Live Session" panel overlapped/blocked the header
+  controls (History, + Exhibit, participants, session buttons).~~ ✅ Fixed
+  2026-07-22 (`080931a`) — docked bottom-right with a capped height and
+  scrollable body.
 - UI: revisit the exhibit "Search" field (exhibit-list panel in
   `depo-exhibit-app.jsx`) — Ryan wants to discuss changes (scope TBD).
 - Feature: manual override of exhibit numbering. Today `markExhibit`
@@ -132,7 +131,8 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   (interacts with the case-wide series and the #5 numbering-schemes item).
 - PIN brute-force hardening (6 digits, anon-callable lookup).
 - Periodic purge of anonymous auth users (query in schema file).
-- `/reset-password` route missing (forgot-password emails dead-end).
+- ~~`/reset-password` route missing (forgot-password emails dead-end).~~
+  ✅ Fixed 2026-07-22 (`080931a`) — route + set-password screen via `updateUser`.
 - Reuse one subscribed channel per session instead of per-send
   `privateChannel()` instances; revoke blob object URLs.
 - Participant views' `connect()` effect subscribes inside an async

@@ -75,7 +75,8 @@ export → session end broadcast.
   of real ended sessions are part of the audit record
 
 **Code cleanups**
-- `/reset-password` route missing (forgot-password emails dead-end)
+- ~~`/reset-password` route missing (forgot-password emails dead-end)~~ ✅ Fixed 2026-07-22 (`080931a`)
+- ~~Live Session panel overlapped the header controls~~ ✅ Fixed 2026-07-22 (`080931a`) — docked bottom-right
 - Reuse one subscribed channel per session; revoke blob object URLs
 - Stamp + markup assume unrotated pages (v1)
 - Pre-existing lint: conditional useCallback in depo-exhibit-app.jsx
