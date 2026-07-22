@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn, signUp, supabase } from "./depodesk-supabase";
 
 const GOLD  = "#C9A84C";
@@ -202,8 +202,7 @@ function ForgotForm({ onBack }) {
   );
 }
 
-export default function AuthScreen() {
-  const [view, setView] = useState("signin");
+function AuthShell({ children }) {
   return (
     <div style={{
       fontFamily: "'Inter', system-ui, sans-serif",
@@ -216,14 +215,98 @@ export default function AuthScreen() {
         <span style={{ fontWeight: 800, fontSize: 20 }}>DepoDesk</span>
       </div>
       <div style={{ width: "100%", maxWidth: 400, background: NAVY, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 32, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
-        {view === "signin" && <SignInForm onSwitch={() => setView("signup")} onForgot={() => setView("forgot")} />}
-        {view === "signup" && <SignUpForm onSwitch={() => setView("signin")} />}
-        {view === "forgot" && <ForgotForm onBack={() => setView("signin")} />}
+        {children}
       </div>
       <div style={{ marginTop: 28, fontSize: 12, color: DIM, textAlign: "center" }}>
         Secure deposition exhibit management<br />
         <span style={{ color: "#2A3F58" }}>Your data is encrypted and protected by Supabase RLS</span>
       </div>
     </div>
+  );
+}
+
+export default function AuthScreen() {
+  const [view, setView] = useState("signin");
+  return (
+    <AuthShell>
+      {view === "signin" && <SignInForm onSwitch={() => setView("signup")} onForgot={() => setView("forgot")} />}
+      {view === "signup" && <SignUpForm onSwitch={() => setView("signin")} />}
+      {view === "forgot" && <ForgotForm onBack={() => setView("signin")} />}
+    </AuthShell>
+  );
+}
+
+// Landing page for the password-reset email link (redirectTo /reset-password).
+// supabase-js parses the recovery token from the URL hash on load and
+// establishes a temporary recovery session; this screen captures the new
+// password via updateUser and returns the user to the app.
+export function ResetPasswordScreen() {
+  const [checking, setChecking] = useState(true);
+  const [ready, setReady]       = useState(false);
+  const [pw1, setPw1]           = useState("");
+  const [pw2, setPw2]           = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
+  const [success, setSuccess]   = useState(null);
+
+  useEffect(() => {
+    let done = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (done || !data.session) return;
+      setReady(true);
+      setChecking(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (done || !session) return;
+      setReady(true);
+      setChecking(false);
+    });
+    const timer = setTimeout(() => { if (!done) setChecking(false); }, 2500);
+    return () => { done = true; clearTimeout(timer); sub.subscription.unsubscribe(); };
+  }, []);
+
+  async function handleSubmit() {
+    setError(null);
+    if (pw1.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (pw1 !== pw2) { setError("Passwords do not match."); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: pw1 });
+      if (error) throw error;
+      setSuccess("Password updated. Taking you to DepoDesk…");
+      setTimeout(() => window.location.assign("/"), 1200);
+    } catch (err) {
+      setError(err.message || "Could not update password. Request a new reset link.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <AuthShell>
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "#E8EDF5", marginBottom: 6 }}>Set a new password</div>
+        <div style={{ fontSize: 13, color: MUTED }}>Choose a new password for your DepoDesk account</div>
+      </div>
+      <Alert msg={error} type="error" />
+      <Alert msg={success} type="success" />
+      {checking ? (
+        <div style={{ fontSize: 13, color: MUTED }}>Verifying your reset link…</div>
+      ) : !ready ? (
+        <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+          This reset link is invalid or has expired.
+          <div style={{ marginTop: 20, textAlign: "center" }}>
+            <span onClick={() => window.location.assign("/")} style={{ color: GOLD, cursor: "pointer", fontWeight: 600 }}>← Back to sign in</span>
+          </div>
+        </div>
+      ) : !success && (
+        <>
+          <Input label="New password" type="password" value={pw1} onChange={e => setPw1(e.target.value)} placeholder="8+ characters" autoComplete="new-password" />
+          <Input label="Confirm password" type="password" value={pw2} onChange={e => setPw2(e.target.value)} placeholder="Re-enter password" autoComplete="new-password" />
+          <div style={{ marginBottom: 20 }} />
+          <Btn onClick={handleSubmit} loading={loading}>Update Password</Btn>
+        </>
+      )}
+    </AuthShell>
   );
 }

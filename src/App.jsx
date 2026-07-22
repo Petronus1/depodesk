@@ -1,5 +1,5 @@
 import { useAuth } from "./depodesk-supabase"
-import AuthScreen from "./depodesk-auth"
+import AuthScreen, { ResetPasswordScreen } from "./depodesk-auth"
 import DepoDesk from "./depo-exhibit-app"
 import JoinPage from "./depodesk-join"
 import WitnessView from "./depodesk-witness"
@@ -13,6 +13,7 @@ function Router() {
   if (path === "/witness")          return <WitnessView />
   if (path === "/opposing-counsel") return <OpposingCounselView />
   if (path === "/court-reporter")   return <CourtReporterView />
+  if (path === "/reset-password")   return <ResetPasswordScreen />
 
   return <AuthedApp />
 }

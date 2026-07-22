@@ -103,15 +103,16 @@ export default function SessionPanel({ session, participants: participantsProp, 
 
   return (
     <div style={{
-      position: "fixed", right: 16, top: 60,
+      position: "fixed", right: 16, bottom: 16, top: "auto",
       width: isMinimized ? "auto" : 300,
+      maxHeight: "70vh", display: "flex", flexDirection: "column",
       background: NAVY, border: `1px solid ${BORDER}`,
       borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
       zIndex: 200, overflow: "hidden",
     }}>
 
       {/* Panel header */}
-      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: GREEN, animation: "pulse 1.5s infinite" }} />
           <span style={{ fontSize: 12, fontWeight: 700, color: "#E8EDF5" }}>Live Session</span>
@@ -125,7 +126,7 @@ export default function SessionPanel({ session, participants: participantsProp, 
       </div>
 
       {!isMinimized && (
-        <div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
           {/* Which deposition this session is for */}
           {(session.witnessName || session.caseName) && (
             <div style={{ padding: "10px 14px", borderBottom: `1px solid ${BORDER}` }}>
