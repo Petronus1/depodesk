@@ -46,7 +46,12 @@ deserves a higher priority than its current framing.
 
 ---
 
-## 2. Redundant / stale Supabase credentials
+## 2. Redundant / stale Supabase credentials — _resolved_
+
+> **Resolved 2026-07-22 (`02125d5`).** Deleted the dead, mismatched `.env`
+> (never read; held a malformed key) and kept the publishable key as the single
+> source of truth in `depodesk-supabase.js`. `.env`/`.env.*` are now gitignored;
+> the stale setup comment is gone. Sign-in verified still reaching Supabase.
 
 **Where:** `.env`, `depodesk-supabase.js:13-14`.
 
