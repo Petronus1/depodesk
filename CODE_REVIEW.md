@@ -14,6 +14,13 @@ Findings are ordered by priority. Nothing here is on fire.
 
 ## 1. PIN brute-force leaks case captions — _highest priority_
 
+> **Partially resolved 2026-07-22 (`3f2a4b1`).** The caption disclosure is
+> fixed: `join_session_by_pin` now returns only the session id + pin, and the
+> join details step no longer shows the caption pre-admission (see
+> `depodesk-pin-caption-migration.sql` — **must be run in the Supabase SQL
+> Editor** to take effect). Still open: shrinking the brute-force surface
+> itself — longer/alphanumeric PINs and server-side rate limiting / lockout.
+
 **Where:** `join_session_by_pin` (RPC in `depodesk-schema.sql`), called from
 `depodesk-join.jsx`.
 
