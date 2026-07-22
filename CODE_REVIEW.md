@@ -74,7 +74,13 @@ two sources of truth, one of them wrong, is a future foot-gun.
 
 ---
 
-## 3. Exhibit numbering can race
+## 3. Exhibit numbering can race — _mitigated_
+
+> **Mitigated 2026-07-22 (`90a1c89`).** Added a synchronous re-entrancy lock
+> (released in a `finally`) plus a disabled/"Marking…" button state, so
+> concurrent marks in a single client can no longer read the same snapshot and
+> assign a duplicate number. A server-authoritative counter (below) is still
+> the stronger fix if numbering ever spans multiple simultaneous markers.
 
 **Where:** `markExhibit` in `depo-exhibit-app.jsx`.
 
