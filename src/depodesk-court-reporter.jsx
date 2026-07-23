@@ -87,7 +87,10 @@ export default function CourtReporterView() {
         // Subscribe to new events in realtime
         const channel = privateChannel(`reporter:${sessionId}`)
           .on("broadcast", { event: "session_event" }, ({ payload }) => {
-            setEvents(prev => [...prev, payload.event]);
+            // Dedupe by event id — a re-delivered broadcast (or a
+            // StrictMode double-subscription in dev) must not double a row.
+            setEvents(prev =>
+              prev.some(e => e.id && e.id === payload.event?.id) ? prev : [...prev, payload.event]);
           })
           .on("broadcast", { event: "session_ended" }, () => {
             setStatus("ended");
