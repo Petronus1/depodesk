@@ -3,19 +3,18 @@
 _Last updated: 2026-07-23._
 
 **Repo state right now:**
-- `origin/main` is at **`f736531`** — everything through last night's PIN
-  rate-limiter is pushed and live.
-- Local `main` is **2 commits ahead, NOT pushed**: the exhibit-renumber feature
-  (`c076353`, now smoke-tested — see below) and this handoff update. Working
-  tree is clean. Ready to push whenever you want.
+- `origin/main` is at **`a3d1206`** — the exhibit-renumber feature (`c076353`,
+  smoke-tested) and everything before it is pushed and live.
+- Local `main` is **ahead by the group-A renumber polish (`53de639`) plus this
+  handoff update, NOT pushed.** Working tree is clean. Ready to push whenever
+  you want.
 
 Pick up elsewhere: `git pull --rebase` (nothing upstream to pull yet, but it
-keeps the local commits on top), then see **✅ Verified, unpushed** and **Open
-items**.
+keeps the local commits on top), then see **✅ Verified** and **Open items**.
 
 ---
 
-## ✅ Verified, unpushed — manual exhibit-number override (`c076353`, local only)
+## ✅ Verified & pushed — manual exhibit-number override (`c076353`)
 
 Lets counsel override an already-marked exhibit's auto-assigned number.
 `renumberExhibit` (in `depo-exhibit-app.jsx`) re-numbers across the case,
@@ -38,20 +37,23 @@ never diverge on the record. Images fall through (no burned number).
       second browser joined as witness/OC). Logic is in place; worth a look if
       you run a real multi-party session.
 
-**Follow-ups (non-blocking, left for a later pass):**
-- **OC "Introduced Exhibits" log staleness** — that list is built from
-  `exhibit_marked` broadcasts on the `session:` channel; renumber doesn't emit
-  one, so an already-introduced exhibit keeps its old number in OC's list until
-  reload. (Reporter + history update fine.)
-- Minor polish: `setEditingNum(false)` fires before input validation;
-  duplicate-number check uses native `confirm()`; the `exhibit_renumbered` log
-  row isn't FK-linked (`exhibit_id` omitted).
+**Follow-ups — group A done 2026-07-23 (`53de639`):**
+- [x] **OC "Introduced Exhibits" staleness** — host now broadcasts
+  `exhibit_renumbered` on the session channel; OC updates the matching roster
+  entry in place (matched by name + old number). *Logic-verified; still wants a
+  real 2-party session to exercise end to end.*
+- [x] Inline editor stays open on invalid input (closes only once checks pass).
+- [x] `exhibit_renumbered` log event now carries `exhibit_id` (matches the
+  `exhibit_marked` shape).
+- [ ] **Deferred:** duplicate-number check still uses a native `confirm()` —
+  replacing it needs a proper modal, and it's a host-only prompt, so low
+  priority.
 
-**Test-data cleanup (from the 2026-07-23 smoke test):** the test uploaded a real
-attached PDF + its stamped "Exhibit 2"/"Exhibit 7" copies into Supabase Storage
-under a remote mirror of the "Smith v. Acme Corp." seed case. Delete those test
-uploads + the test case row if you don't want them. Locally, "Reset to sample
-data" clears the changed seed state.
+**Test-data cleanup (from the 2026-07-23 smoke test):** ✅ Done — the test case
+`61aaae15…` and its 3 uploaded files were deleted from Supabase (verified; real
+"Acantha Jones"/"Rivera" data untouched). One harmless empty duplicate case row
+from a July-19 session (`102f72b9…`, 0 files) was left in place. Locally, "Reset
+to sample data" clears the changed seed state if you want.
 
 ---
 
