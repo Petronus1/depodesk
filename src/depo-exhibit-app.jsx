@@ -254,7 +254,7 @@ function WitnessView({ sharedExhibit }) {
   const [pulse, setPulse] = useState(false);
   useEffect(() => { setPulse(true); const t = setTimeout(() => setPulse(false), 600); return () => clearTimeout(t); }, [sharedExhibit?.id]);
   return (
-    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#060E1A", height: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#0A1628", height: "100vh", color: "#E8EDF5", display: "flex", flexDirection: "column" }}>
       <div style={{ background: "#0A1628", borderBottom: "1px solid #1E3254", padding: "0 24px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 24, height: 24, background: "#C9A84C", borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, color: "#0F1B2D" }}>D</div>

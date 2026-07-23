@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase, privateChannel } from "./depodesk-supabase";
 
-import { GOLD, NAVY, DARK_DEEP as DARK, BORDER, MUTED, DIM, GREEN } from "./theme";
+import { GOLD, NAVY, DARK, BORDER, MUTED, DIM, GREEN } from "./theme";
 
 const EVENT_CONFIG = {
   exhibit_marked:       { icon: "✓", color: GREEN,    label: "Marked into record" },
