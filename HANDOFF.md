@@ -2,124 +2,89 @@
 
 _Last updated: 2026-07-23._
 
-**Repo state right now:**
-- `origin/main` is at **`a3d1206`** — the exhibit-renumber feature (`c076353`,
-  smoke-tested) and everything before it is pushed and live.
-- Local `main` is **ahead by the group-A renumber polish (`53de639`) plus this
-  handoff update, NOT pushed.** Working tree is clean. Ready to push whenever
-  you want.
+**Repo state:** `origin/main` is at **`600f0ae`** — everything below is committed,
+pushed, and (where noted) live in Supabase. Working tree is clean, nothing local
+or unpushed.
 
-Pick up elsewhere: `git pull --rebase` (nothing upstream to pull yet, but it
-keeps the local commits on top), then see **✅ Verified** and **Open items**.
+Pick up elsewhere: `git pull`, then jump to **Open items**.
 
 ---
 
-## ✅ Verified & pushed — manual exhibit-number override (`c076353`)
+## Shipped this stretch (all pushed)
 
-Lets counsel override an already-marked exhibit's auto-assigned number.
-`renumberExhibit` (in `depo-exhibit-app.jsx`) re-numbers across the case,
-re-stamps the PDF, re-pushes to live participants, and logs an
-`exhibit_renumbered` event (reporter + history views render it). Inline edit UI
-on the exhibit header — click the label (`✎`) to edit.
+**Exhibit renumbering** (`c076353`, polished in `53de639`) — counsel can override an
+already-marked exhibit's number inline (click the `✎` on the exhibit header).
+`renumberExhibit` re-numbers across the case, **re-stamps the PDF before committing
+the number** (aborts if it can't, so the burned sticker and the number never
+diverge), re-pushes to live participants, and logs an `exhibit_renumbered` event.
+Smoke-tested live 2026-07-23 (attach PDF → mark → renumber → sticker + label both
+updated in lockstep; abort path confirmed). Polish: OC "Introduced Exhibits" roster
+now updates in place after a renumber; the inline editor stays open on invalid
+input; the event carries `exhibit_id`.
 
-Includes a **correctness fix**: re-stamp runs BEFORE the number is committed,
-and the whole renumber **aborts** if the PDF can't be re-stamped (no original on
-file) or stamping fails — so the burned-in sticker and the exhibit number can
-never diverge on the record. Images fall through (no burned number).
+**Theme cleanup** (`e7f373e`, `600f0ae`) — extracted `src/theme.js` as the single
+palette source; the 8 view files that copy-pasted it now import from it. Unified the
+two stray dark shades onto `#0A1628` (was `#060E1A` in the 3 participant views). Net
+smaller, no visual change except those three backgrounds a hair lighter.
 
-**Smoke-tested live 2026-07-23** (logged-in session, real PDF):
-- [x] Attach PDF → mark (Exhibit 2, stamped) → renumber to 7 → label **and** the
-      burned bottom-right sticker both updated to "EXHIBIT 7" in lockstep. No
-      mismatch, no console errors.
-- [x] Abort path: renumbering a PDF with no `original_path` refused cleanly and
-      left the number unchanged.
-- [ ] **Not exercised:** the live re-push to a *participant's* screen (needs a
-      second browser joined as witness/OC). Logic is in place; worth a look if
-      you run a real multi-party session.
-
-**Follow-ups — group A done 2026-07-23 (`53de639`):**
-- [x] **OC "Introduced Exhibits" staleness** — host now broadcasts
-  `exhibit_renumbered` on the session channel; OC updates the matching roster
-  entry in place (matched by name + old number). *Logic-verified; still wants a
-  real 2-party session to exercise end to end.*
-- [x] Inline editor stays open on invalid input (closes only once checks pass).
-- [x] `exhibit_renumbered` log event now carries `exhibit_id` (matches the
-  `exhibit_marked` shape).
-- [ ] **Deferred:** duplicate-number check still uses a native `confirm()` —
-  replacing it needs a proper modal, and it's a host-only prompt, so low
-  priority.
-
-**Test-data cleanup (from the 2026-07-23 smoke test):** ✅ Done — the test case
-`61aaae15…` and its 3 uploaded files were deleted from Supabase (verified; real
-"Acantha Jones"/"Rivera" data untouched). One harmless empty duplicate case row
-from a July-19 session (`102f72b9…`, 0 files) was left in place. Locally, "Reset
-to sample data" clears the changed seed state if you want.
+**Earlier the same day / prior night (context):**
+- PIN lookup no longer leaks the case caption (`3f2a4b1`) + IP rate-limiting
+  (`f736531`) — both migrations applied to prod.
+- Stale `.env` / duplicate Supabase key removed (`02125d5`).
+- Exhibit-numbering race guard (`90a1c89`); court-reporter log dedupe (`87e860b`);
+  session-panel overlap + `/reset-password` route (`080931a`).
+- Full write-up of findings + status in `CODE_REVIEW.md`.
 
 ---
 
-## Done & pushed
+## Open items
 
-### Last night (2026-07-22 evening)
-- **`f736531` — PIN rate-limiting.** Closes the old "#1 remainder." Hidden
-  `pin_attempts` table (RLS on, no policy; only the definer RPC touches it),
-  throttles by `x-forwarded-for` IP, 20 fails / 15 min, correct PINs never
-  penalized, join page surfaces the "too many attempts" message. Migration
-  `src/depodesk-pin-ratelimit-migration.sql` — **applied to prod** per the
-  commit message.
-- **`87e860b` — court-reporter log dedupe.** A re-delivered broadcast (or dev
-  StrictMode double-subscribe) doubled rows; now guarded by event id, mirroring
-  the OC view. Display-only — the DB was always correct.
+**Big, standalone (each its own session):**
+1. **Split `depo-exhibit-app.jsx`** (~1,640 lines — owns cases, depositions,
+   exhibits, sessions, sharing, annotations, stamping). Pull session/sharing and the
+   annotation layer into their own modules. It still uses inline hex colors; fold
+   those into `theme.js` as part of the split.
+2. **Tests** — none exist. Highest value: exhibit numbering (incl. the concurrency
+   guard + renumber), the `isUuid` guard in `logSessionEvent`, `sanitizeCases`.
+3. **OC live view of a host-pushed exhibit uses an `<iframe>`** — doesn't follow host
+   page-sync and won't render in the headless preview. Upgrade it to the pdfjs
+   `PDFViewer` (the re-open modal and OC's own presentation already use it).
 
-### Earlier that day — code-review pass (`CODE_REVIEW.md`)
-| # | Finding | Status | Commit |
-|---|---------|--------|--------|
-| 1 | PIN lookup leaked the case caption to unadmitted callers | ✅ Fixed (code + DB) | `3f2a4b1` |
-| 2 | Duplicate / mismatched Supabase key (`.env` vs hardcoded) | ✅ Fixed | `02125d5` |
-| 3 | Exhibit numbering could race → duplicate numbers | ✅ Mitigated | `90a1c89` |
+**Smaller / deferred:**
+- Renumber's duplicate-number check uses a native `confirm()`; a proper modal would
+  be nicer (host-only prompt, low priority).
+- OC roster live-update after renumber is logic-verified but wants a real **two-party
+  session** (host + OC) to exercise end to end.
+- Realtime: participant views subscribe inside an async `connect()` → StrictMode
+  (dev) can double-subscribe (currently dedup-guarded; proper fix is a per-effect
+  `cancelled` flag). Reuse one channel per session; revoke blob object URLs.
+- Periodic purge of anonymous auth users (query already in the schema file).
+- Package exports for sessions created before `depodesk-package-migration.sql` can't
+  recover historical exhibit files (storage paths weren't captured in audit events).
+- Residual PIN risk: a distributed IP-rotating attacker (bounded by Supabase limits +
+  the manual admission gate); longer/alphanumeric PINs optional.
+- ~20 intentional lint warnings (mostly deliberate `exhaustive-deps`, a few cosmetic
+  `catch (err)`).
 
-- **#1 caption leak** — `join_session_by_pin` returns only `{ id, pin }`; caption
-  disclosed only after admission via the gated `get_session_for_participant`.
-  Migration `depodesk-pin-caption-migration.sql` **run in prod** (`pass = true`).
-- **#2 stale creds** — deleted the dead, malformed `.env`; publishable key is the
-  single source of truth in `depodesk-supabase.js` (public by design — RLS
-  protects data); `.env`/`.env.*` gitignored.
-- **#3 numbering race** — synchronous re-entrancy lock (`markingRef`) in
-  `markExhibit`, released in a `finally`, plus a disabled/"Marking…" button.
-
-Also earlier: force-page broadcast fix, session-panel overlap + reset-password
-check-offs, and the review's auto-fixes (`77ed874`).
-
-**Smoke tests still worth doing when logged in** (all verified compile/lint only):
-caption no longer shows pre-admission; double-click **Mark** assigns one number;
-PIN rate-limit locks out after 20 wrong tries; reporter log doesn't double rows.
-
----
-
-## Open items (not started)
-
-From `CODE_REVIEW.md`:
-
-1. **#4 structure.** `depo-exhibit-app.jsx` is ~1,640 lines. Smallest safe win:
-   extract the duplicated theme constants (`GOLD`, `NAVY`, `DARK`, `BORDER`,
-   `MUTED`, `DIM`) — redefined in ≥4 files — into a single `src/theme.js`.
-   Larger: split session/sharing and the annotation layer out of the exhibit app.
-2. **#5 tests.** None exist. Highest-value targets: exhibit numbering (incl. the
-   #3 concurrency case + the new renumber flow), the `isUuid` guard in
-   `logSessionEvent`, and `sanitizeCases`.
-
-Review §6: ~20 lint warnings remain (mostly deliberate `exhaustive-deps` on
-polling/broadcast effects, plus a few cosmetic `catch (err)`). Not bugs.
-
-Residual PIN note: rate-limiting bounds single-IP enumeration; a distributed
-IP-rotating attacker is still bounded only by the manual admission gate — longer
-PINs would raise the bar further if ever needed.
+**Wants your input:**
+- Exhibit **"Search" field** in the exhibit-list panel — you flagged wanting changes;
+  scope TBD.
+- Whether to unify the two dark shades was decided (done, `#0A1628`). No other design
+  calls pending.
 
 ---
+
+## Housekeeping
+- Test-data cleanup from the 2026-07-23 smoke test is **done** (test case `61aaae15…`
+  + its 3 files deleted; real "Acantha Jones"/"Rivera" data untouched). One harmless
+  empty duplicate case row from July 19 (`102f72b9…`) left in place.
+- Local seed state may show test marks (Exhibit 1 / Exhibit 7) — "Reset to sample
+  data" in the app clears it.
 
 ## Quick reference
-
 - Repo: `github.com/Petronus1/depodesk` · branch `main`
 - Run locally: `npm run dev` (Vite, port 5173) · `npm run lint` (oxlint)
-- Supabase project: `jxpsqttphsccbigeppfg` — migrations live in `src/*-migration.sql`,
-  run them in the SQL Editor (idempotent / safe to re-run)
-- Full findings + rationale: `CODE_REVIEW.md`
+- Supabase project `jxpsqttphsccbigeppfg` — migrations in `src/*-migration.sql`, run
+  in the SQL Editor (idempotent). Storage deletes must go through the Dashboard/API,
+  not SQL.
+- Full findings + rationale: `CODE_REVIEW.md`. Architecture notes: `CLAUDE.md`.
