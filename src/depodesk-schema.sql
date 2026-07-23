@@ -300,13 +300,54 @@ $$;
 -- contains party names); an anon caller with a valid PIN must still
 -- be approved by the host before get_session_for_participant will
 -- disclose the caption.
+--
+-- Rate-limited against brute-force enumeration: failed lookups are
+-- logged per client IP (from the PostgREST request headers, since the
+-- lookup runs before the participant's anon sign-in) and an IP is
+-- refused after 20 failures in 15 minutes. Correct PINs never log a
+-- failure. See depodesk-pin-ratelimit-migration.sql.
+create table if not exists public.pin_attempts (
+  id         bigint generated always as identity primary key,
+  ip         text,
+  created_at timestamptz not null default now()
+);
+create index if not exists pin_attempts_ip_time on public.pin_attempts (ip, created_at);
+create index if not exists pin_attempts_time    on public.pin_attempts (created_at);
+alter table public.pin_attempts enable row level security;
+-- (no policy → no direct access; the definer RPC bypasses RLS as owner)
+
 create or replace function public.join_session_by_pin(p_pin text)
 returns table (id uuid, pin text)
-language sql security definer set search_path = public
+language plpgsql security definer set search_path = public
 as $$
-  select s.id, s.pin
-    from public.sessions s
-   where s.pin = p_pin and s.is_active
+declare
+  v_ip    text;
+  v_fails int;
+  c_window   constant interval := interval '15 minutes';
+  c_max_fail constant int      := 20;
+begin
+  v_ip := trim(split_part(
+            coalesce(current_setting('request.headers', true)::json->>'x-forwarded-for', ''),
+            ',', 1));
+  if v_ip = '' then v_ip := 'unknown'; end if;
+
+  delete from public.pin_attempts where created_at < now() - interval '1 hour';
+
+  select count(*) into v_fails
+    from public.pin_attempts
+   where ip = v_ip and created_at > now() - c_window;
+  if v_fails >= c_max_fail then
+    raise exception 'Too many attempts. Please wait a few minutes and try again.'
+      using errcode = 'P0001';
+  end if;
+
+  if exists (select 1 from public.sessions s where s.pin = p_pin and s.is_active) then
+    return query
+      select s.id, s.pin from public.sessions s where s.pin = p_pin and s.is_active;
+  else
+    insert into public.pin_attempts (ip) values (v_ip);
+  end if;
+end;
 $$;
 
 -- Join step 2: request admission (insert bypasses RLS; validates
@@ -557,12 +598,16 @@ create policy "Hosts can send broadcasts"
 
 
 -- ── KNOWN GAPS (future passes) ───────────────────────────────
--- * PINs are 6 digits and join_session_by_pin is anon-callable;
---   brute force is rate-limited only by Supabase. (As of
---   2026-07-22 the PIN lookup no longer returns the case caption,
---   so a failed brute force reveals only that a PIN is live, not
---   whose deposition it is. Longer PINs + server-side lockout are
---   still worth adding.)
+-- * PINs are 6 digits and join_session_by_pin is anon-callable. The
+--   lookup no longer returns the case caption (2026-07-22) and is now
+--   IP rate-limited (20 fails / 15 min, see pin_attempts above), so
+--   single-source enumeration is impractical. Residual: a distributed
+--   (IP-rotating) attacker is bounded only by Supabase platform limits
+--   + the manual admission gate; longer PINs would raise the bar
+--   further if ever needed.
+-- * request_to_join can be spammed with a KNOWN pin (creates pending
+--   rows the host must decline) — not rate-limited; low priority since
+--   it needs a valid PIN first.
 -- * Anonymous sign-ins accumulate one auth.users row per joining
 --   browser. Purge periodically:
 --     delete from auth.users

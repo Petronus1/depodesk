@@ -129,7 +129,11 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   (`depo-exhibit-app.jsx`) auto-assigns the next case-wide number; Ryan
   wants to discuss letting counsel set/override the number at mark time
   (interacts with the case-wide series and the #5 numbering-schemes item).
-- PIN brute-force hardening (6 digits, anon-callable lookup).
+- ~~PIN brute-force hardening (6 digits, anon-callable lookup).~~
+  ✅ Mitigated 2026-07-22 — `join_session_by_pin` is now IP rate-limited
+  (20 fails / 15 min via the `pin_attempts` table;
+  `depodesk-pin-ratelimit-migration.sql`). Residual: distributed
+  IP-rotating attack (bounded by Supabase limits + admission gate).
 - Periodic purge of anonymous auth users (query in schema file).
 - ~~`/reset-password` route missing (forgot-password emails dead-end).~~
   ✅ Fixed 2026-07-22 (`080931a`) — route + set-password screen via `updateUser`.

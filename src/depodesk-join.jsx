@@ -111,7 +111,10 @@ function PINStep({ onVerified }) {
     setLoading(true); setError(null);
     try {
       const { data, error } = await supabase.rpc("join_session_by_pin", { p_pin: pin });
-      if (error || !data || data.length === 0) throw new Error("Invalid PIN or session has ended.");
+      // The RPC raises a message when the caller's IP is rate-limited;
+      // surface it so a throttled participant knows to wait.
+      if (error) throw new Error(error.message || "Could not verify the PIN. Please try again.");
+      if (!data || data.length === 0) throw new Error("Invalid PIN or session has ended.");
       onVerified(data[0]); // { id, pin } — caption withheld until admission
     } catch (err) {
       setError(err.message || "Invalid PIN. Please check with the attorney.");
