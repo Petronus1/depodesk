@@ -34,6 +34,7 @@ const EVENT_CONFIG = {
   page_direct:          { icon: "⬆", color: GOLD,     label: "Directed witness to page" },
   witness_markup_started: { icon: "✏", color: "#C07EE8", label: "Witness markup requested" },
   witness_marked_exhibit: { icon: "✏", color: "#C07EE8", label: "Witness marked exhibit" },
+  exhibit_renumbered:     { icon: "#", color: GOLD,      label: "Exhibit renumbered" },
 };
 
 export default function CourtReporterView() {

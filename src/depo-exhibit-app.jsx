@@ -530,6 +530,8 @@ export default function App() {
   const attachInputRef = useRef();
   const markingRef = useRef(false);                 // synchronous re-entrancy guard for markExhibit
   const [markingId, setMarkingId] = useState(null); // exhibit id currently being marked (drives button state)
+  const [editingNum, setEditingNum] = useState(false); // inline exhibit-number override editor open?
+  const [editNumValue, setEditNumValue] = useState(""); // its input value
 
   const activeCase = cases.find(c => c.id === activeCaseId);
   const isLibrary  = activeDepoId === "__library__";
@@ -1011,6 +1013,90 @@ async function shareExhibit(id) {
     }
   }
 
+  // Override the auto-assigned number of an already-marked exhibit.
+  // Re-numbers it across the whole case, re-stamps the PDF with the new
+  // number, re-pushes if it is live, and logs the change to the record.
+  async function renumberExhibit(id, rawNum) {
+    const newNum = parseInt(String(rawNum).trim(), 10);
+    const ex = exhibits.find(e => e.id === id);
+    setEditingNum(false);
+    if (!ex || !ex.marked) return;
+    if (!Number.isInteger(newNum) || newNum < 1) { notify("Enter a positive whole number", "#F87171"); return; }
+    if (newNum === ex.exhibitNum) return;
+
+    // Warn (but allow) if another marked exhibit in this case already uses it
+    const used = [];
+    (activeCase?.library || []).forEach(e => { if (e.id !== id && e.exhibitNum) used.push(e.exhibitNum); });
+    (activeCase?.depositions || []).forEach(d => d.exhibits.forEach(e => { if (e.id !== id && e.exhibitNum) used.push(e.exhibitNum); }));
+    if (used.includes(newNum) && !confirm(`Exhibit ${newNum} already exists in this case. Use this number anyway?`)) return;
+
+    const oldNum = ex.exhibitNum;
+    const label  = `Exhibit ${newNum}`;
+
+    // Re-stamp BEFORE committing the number, so the burned-in sticker and the
+    // exhibit number can never diverge on a court record. A stamped PDF is one
+    // that has an unstamped original on file (original_path). If we can't
+    // regenerate a matching stamp — the original is unavailable, or stamping
+    // fails — we abort the whole renumber rather than leave the label saying
+    // one number while the page shows another.
+    let stampedPath = ex.file_path;
+    let stampedUrl  = null;
+    if (ex.type === "PDF") {
+      if (!ex.original_path) {
+        // No re-stampable original (e.g. hydrated on another device, or
+        // stamping failed when it was marked). Refuse rather than mismatch.
+        notify(`Can't re-stamp this exhibit here — renumber on the device where it was marked. Kept Exhibit ${oldNum}.`, "#F87171");
+        return;
+      }
+      try {
+        notify("Re-stamping…", "#7A93B8");
+        const srcUrl = await getExhibitFileUrl(ex.original_path);
+        const bytes  = await (await fetch(srcUrl)).arrayBuffer();
+        const stamped = await stampPdf(bytes, { number: newNum });
+        const blob = new Blob([stamped], { type: "application/pdf" });
+        stampedUrl = URL.createObjectURL(blob);
+        const remoteCaseId = await ensureRemoteCaseId();
+        if (remoteCaseId) {
+          const file = new File([blob], `exhibit-${id}-stamped.pdf`, { type: "application/pdf" });
+          stampedPath = await uploadExhibitFile(remoteCaseId, `${id}-stamped`, file);
+        }
+      } catch (err) {
+        console.error("Re-stamp after renumber failed:", err);
+        notify(`Could not re-stamp the PDF — kept Exhibit ${oldNum}. Please try again.`, "#F87171");
+        return; // abort: never let the number and the burned stamp diverge
+      }
+    }
+    // Images carry no burned number, so they fall through and just renumber.
+
+    // Commit the new number across the case (and swap in the re-stamped file
+    // when we produced one). Guaranteed consistent at this point.
+    const applyNum = e => e.id === id
+      ? { ...e, exhibitNum: newNum, label, ...(stampedUrl ? { fileUrl: stampedUrl, file_path: stampedPath } : {}) }
+      : e;
+    updateCases(prev => prev.map(c => c.id !== activeCaseId ? c : {
+      ...c,
+      library: (c.library || []).map(applyNum),
+      depositions: (c.depositions || []).map(d => ({ ...d, exhibits: d.exhibits.map(applyNum) })),
+    }));
+    notify(`Renumbered to ${label}`, "#4CAF82");
+
+    // If this exhibit is live, re-push the corrected version to participants
+    if (sharedId === id && activeSession) {
+      await privateChannel(`session:${activeSession.id}`).send({
+        type: "broadcast", event: "exhibit_push",
+        payload: { exhibit: { ...ex, exhibitNum: newNum, label, file_path: stampedPath, caseName: activeCase?.name } },
+      });
+    }
+
+    // Record the change (kept as a distinct event — the audit trail is not rewritten)
+    if (activeSession) {
+      logSessionEvent(activeSession.id, "exhibit_renumbered", {
+        exhibit_name: ex.name, exhibit_num: newNum, actor_role: "host",
+        notes: `Renumbered from Exhibit ${oldNum} to Exhibit ${newNum}`,
+      });
+    }
+  }
+
   // Counsel saved a witness markup session: flatten the strokes into
   // the exhibit's PDF and add the result as a NEW exhibit in this
   // deposition ("… — as marked by witness"), ready to mark and share.
@@ -1356,7 +1442,7 @@ async function shareExhibit(id) {
               const tc = typeColors[ex.type] || typeColors.PDF;
               const annCount = (annotations[ex.id]?.strokes?.length || 0) + (annotations[ex.id]?.notes?.length || 0);
               return (
-                <div key={ex.id} onClick={() => { setActiveExhibitId(ex.id); setShowAnnotations(false); setAnnTool("none"); }} style={{
+                <div key={ex.id} onClick={() => { setActiveExhibitId(ex.id); setShowAnnotations(false); setAnnTool("none"); setEditingNum(false); }} style={{
                   padding: "9px 12px", borderBottom: "1px solid #1A2D47", cursor: "pointer",
                   background: isActive ? "#162540" : "transparent",
                   borderLeft: isActive ? "3px solid #C9A84C" : "3px solid transparent",
@@ -1407,11 +1493,29 @@ async function shareExhibit(id) {
               <div style={{ background: "#0F1B2D", borderBottom: "1px solid #1E3254", padding: "10px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 8, flexWrap: "wrap" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {activeExhibit.marked
-                      ? <span style={{ fontSize: 11, fontWeight: 800, color: "#C9A84C", letterSpacing: "1px", textTransform: "uppercase" }}>{activeExhibit.label}</span>
-                      : <span style={{ fontSize: 11, fontWeight: 600, color: "#4A6080", fontStyle: "italic" }}>Not yet marked</span>
-                    }
-                    {activeExhibit.marked && <span style={{ fontSize: 9, background: "#0D2D1A", color: "#4CAF82", borderRadius: 3, padding: "2px 5px", fontWeight: 700 }}>IN RECORD</span>}
+                    {activeExhibit.marked ? (
+                      editingNum ? (
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#C9A84C", letterSpacing: "1px", textTransform: "uppercase" }}>Exhibit</span>
+                          <input autoFocus type="number" min="1" value={editNumValue}
+                            onChange={e => setEditNumValue(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") renumberExhibit(activeExhibit.id, editNumValue); if (e.key === "Escape") setEditingNum(false); }}
+                            style={{ width: 56, background: "#0A1628", border: "1px solid #C9A84C", borderRadius: 4, color: "#C9A84C", fontSize: 12, fontWeight: 800, padding: "2px 6px", outline: "none" }} />
+                          <button onClick={() => renumberExhibit(activeExhibit.id, editNumValue)} style={{ background: "#C9A84C", color: "#0F1B2D", border: "none", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                          <button onClick={() => setEditingNum(false)} style={{ background: "transparent", color: "#7A93B8", border: "1px solid #1E3254", borderRadius: 4, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}>Cancel</button>
+                        </span>
+                      ) : (
+                        <button title="Click to change the exhibit number" onClick={() => { setEditNumValue(String(activeExhibit.exhibitNum ?? "")); setEditingNum(true); }}
+                          style={{ background: "transparent", border: "1px dashed transparent", color: "#C9A84C", fontSize: 11, fontWeight: 800, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", padding: "1px 4px", borderRadius: 4 }}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = "#5C4400"}
+                          onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"}>
+                          {activeExhibit.label} ✎
+                        </button>
+                      )
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "#4A6080", fontStyle: "italic" }}>Not yet marked</span>
+                    )}
+                    {activeExhibit.marked && !editingNum && <span style={{ fontSize: 9, background: "#0D2D1A", color: "#4CAF82", borderRadius: 3, padding: "2px 5px", fontWeight: 700 }}>IN RECORD</span>}
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: "#E8EDF5", marginTop: 1 }}>{activeExhibit.name}</div>
                   {activeDepo && <div style={{ fontSize: 11, color: "#4A6080", marginTop: 2 }}>{activeDepo.witness} · {activeDepo.date}</div>}
