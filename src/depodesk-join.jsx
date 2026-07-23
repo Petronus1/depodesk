@@ -12,13 +12,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./depodesk-supabase";
 
-const GOLD   = "#C9A84C";
-const NAVY   = "#0F1B2D";
-const DARK   = "#0A1628";
-const BORDER = "#1E3254";
-const MUTED  = "#7A93B8";
-const DIM    = "#4A6080";
-const GREEN  = "#4CAF82";
+import { GOLD, NAVY, DARK, BORDER, MUTED, DIM, GREEN } from "./theme";
 
 const ROLES = [
   {

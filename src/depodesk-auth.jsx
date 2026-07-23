@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
 import { signIn, signUp, supabase } from "./depodesk-supabase";
 
-const GOLD  = "#C9A84C";
-const NAVY  = "#0F1B2D";
-const DARK  = "#0A1628";
-const BORDER = "#1E3254";
-const MUTED = "#7A93B8";
-const DIM   = "#4A6080";
+import { GOLD, NAVY, DARK, BORDER, MUTED, DIM } from "./theme";
 
 function Input({ label, type = "text", value, onChange, placeholder, autoComplete }) {
   const [focused, setFocused] = useState(false);

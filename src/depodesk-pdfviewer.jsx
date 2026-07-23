@@ -33,12 +33,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 // Point PDF.js at its worker (copy from node_modules or use CDN)
 
 
-const GOLD  = "#C9A84C";
-const NAVY  = "#0F1B2D";
-const BORDER = "#1E3254";
-const MUTED  = "#7A93B8";
-const DIM    = "#4A6080";
-const GREEN  = "#4CAF82";
+import { GOLD, NAVY, BORDER, MUTED, DIM, GREEN } from "./theme";
 
 // ── Witness markup overlay ────────────────────────────────────
 // Draws strokes stored in page-normalized coordinates (0..1) and,

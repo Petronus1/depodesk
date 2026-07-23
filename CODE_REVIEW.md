@@ -107,10 +107,12 @@ error that's very costly when it does occur.
   exhibits, sessions, sharing, annotations, and stamping. It's the clear
   candidate to split — e.g. pull the session/sharing logic and the annotation
   layer into their own modules.
-- **Duplicated theme constants.** `GOLD`, `NAVY`, `DARK`, `BORDER`, `MUTED`,
-  `DIM` are redefined in at least four files (`depodesk-join`, `depodesk-auth`,
-  `depodesk-pdfviewer`, `depo-exhibit-app`). Extract a single `theme.js` and
-  import from it.
+- ~~**Duplicated theme constants.**~~ ✅ Done 2026-07-23 — extracted `src/theme.js`;
+  the 8 view files that copy-pasted the palette now import from it. Two dark
+  shades were in use (`#0A1628` vs `#060E1A`), both preserved (`DARK` /
+  `DARK_DEEP`) so no screen changed appearance; unify later if desired.
+  (`depo-exhibit-app.jsx` still uses inline hexes — folded into the file-split
+  below rather than converted piecemeal.)
 - **`storageGet` / `storageSet` / `storageDel`** are declared `async` but do
   purely synchronous `localStorage` work. Harmless, but the `async` signature is
   misleading — either make them sync or leave a comment noting the shape is

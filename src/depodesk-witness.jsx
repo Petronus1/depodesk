@@ -2,13 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase, getExhibitFileUrl, privateChannel } from "./depodesk-supabase";
 import PDFViewer from "./depodesk-pdfviewer";
 
-const GOLD  = "#C9A84C";
-const NAVY  = "#0F1B2D";
-const DARK  = "#060E1A";
-const BORDER = "#1E3254";
-const MUTED  = "#7A93B8";
-const DIM    = "#4A6080";
-const GREEN  = "#4CAF82";
+import { GOLD, NAVY, DARK_DEEP as DARK, BORDER, MUTED, DIM, GREEN } from "./theme";
 
 export default function WitnessView() {
   const [session, setSession]       = useState(null);
