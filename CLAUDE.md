@@ -125,10 +125,11 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   scrollable body.
 - UI: revisit the exhibit "Search" field (exhibit-list panel in
   `depo-exhibit-app.jsx`) — Ryan wants to discuss changes (scope TBD).
-- Feature: manual override of exhibit numbering. Today `markExhibit`
-  (`depo-exhibit-app.jsx`) auto-assigns the next case-wide number; Ryan
-  wants to discuss letting counsel set/override the number at mark time
-  (interacts with the case-wide series and the #5 numbering-schemes item).
+- ~~Feature: manual override of exhibit numbering.~~ ✅ Shipped 2026-07-23
+  (`c076353`) — `renumberExhibit` (`depo-exhibit-app.jsx`) lets counsel edit
+  an already-marked exhibit's number inline; re-stamps the PDF before
+  committing (aborts if it can't, so number and sticker never diverge),
+  re-pushes if live, logs an `exhibit_renumbered` event. Smoke-tested.
 - ~~PIN brute-force hardening (6 digits, anon-callable lookup).~~
   ✅ Mitigated 2026-07-22 — `join_session_by_pin` is now IP rate-limited
   (20 fails / 15 min via the `pin_attempts` table;
@@ -147,8 +148,9 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   in real browsers, not in the headless preview) and does not follow
   host page-sync; the re-open modal and OC's own presentation use the
   pdfjs `PDFViewer`.
-- Pre-existing lint: conditional `useCallback` after the `isWitness`
-  early return in depo-exhibit-app.jsx (harmless, `isWitness` is stable).
+- ~~Pre-existing lint: conditional `useCallback` after the `isWitness`
+  early return in depo-exhibit-app.jsx.~~ ✅ Fixed 2026-07-22 (`77ed874`) —
+  `onDrop` is now a plain function; unused `useCallback` import removed.
 - Package exports for sessions created before `depodesk-package-migration.sql`
   include the cover and audit PDFs but cannot recover historical exhibit
   files, because their storage paths were not captured in audit events.

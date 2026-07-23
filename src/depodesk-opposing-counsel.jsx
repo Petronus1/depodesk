@@ -97,6 +97,14 @@ export default function OpposingCounselView() {
             setIntroducedExhibits(prev =>
               prev.some(e => e.id && e.id === payload.event?.id) ? prev : [...prev, payload.event]);
           })
+          .on("broadcast", { event: "exhibit_renumbered" }, ({ payload }) => {
+            // Host renumbered an already-introduced exhibit — update its number
+            // in place so the roster doesn't show a stale one until reload.
+            setIntroducedExhibits(prev => prev.map(e =>
+              (e.exhibit_name === payload.exhibit_name && e.exhibit_num === payload.old_num)
+                ? { ...e, exhibit_num: payload.new_num }
+                : e));
+          })
           .on("broadcast", { event: "control_transferred" }, ({ payload }) => {
             const oc = payload.controller_role === "opposing_counsel";
             setHasControl(oc);

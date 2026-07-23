@@ -1019,10 +1019,10 @@ async function shareExhibit(id) {
   async function renumberExhibit(id, rawNum) {
     const newNum = parseInt(String(rawNum).trim(), 10);
     const ex = exhibits.find(e => e.id === id);
-    setEditingNum(false);
-    if (!ex || !ex.marked) return;
+    if (!ex || !ex.marked) { setEditingNum(false); return; }
+    // Validate BEFORE closing the editor, so a bad entry leaves it open to fix.
     if (!Number.isInteger(newNum) || newNum < 1) { notify("Enter a positive whole number", "#F87171"); return; }
-    if (newNum === ex.exhibitNum) return;
+    if (newNum === ex.exhibitNum) { setEditingNum(false); return; } // no change
 
     // Warn (but allow) if another marked exhibit in this case already uses it
     const used = [];
@@ -1030,6 +1030,7 @@ async function shareExhibit(id) {
     (activeCase?.depositions || []).forEach(d => d.exhibits.forEach(e => { if (e.id !== id && e.exhibitNum) used.push(e.exhibitNum); }));
     if (used.includes(newNum) && !confirm(`Exhibit ${newNum} already exists in this case. Use this number anyway?`)) return;
 
+    setEditingNum(false); // all checks passed — commit to the renumber
     const oldNum = ex.exhibitNum;
     const label  = `Exhibit ${newNum}`;
 
@@ -1091,8 +1092,15 @@ async function shareExhibit(id) {
     // Record the change (kept as a distinct event — the audit trail is not rewritten)
     if (activeSession) {
       logSessionEvent(activeSession.id, "exhibit_renumbered", {
-        exhibit_name: ex.name, exhibit_num: newNum, actor_role: "host",
+        exhibit_id: ex.id, exhibit_name: ex.name, exhibit_num: newNum, actor_role: "host",
         notes: `Renumbered from Exhibit ${oldNum} to Exhibit ${newNum}`,
+      });
+      // Update opposing counsel's "Introduced Exhibits" roster in place — it is
+      // built from exhibit_marked events on the session channel and would
+      // otherwise keep showing the old number until reload.
+      await privateChannel(`session:${activeSession.id}`).send({
+        type: "broadcast", event: "exhibit_renumbered",
+        payload: { exhibit_name: ex.name, old_num: oldNum, new_num: newNum },
       });
     }
   }
