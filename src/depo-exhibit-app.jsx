@@ -1059,7 +1059,10 @@ async function shareExhibit(id) {
         const remoteCaseId = await ensureRemoteCaseId();
         if (remoteCaseId) {
           const file = new File([blob], `exhibit-${id}-stamped.pdf`, { type: "application/pdf" });
-          stampedPath = await uploadExhibitFile(remoteCaseId, `${id}-stamped`, file);
+          // Versioned name: re-stamping writes a NEW object rather than
+          // overwriting the prior stamped path, so a live participant's
+          // signed URL can never serve a cached copy with the old number.
+          stampedPath = await uploadExhibitFile(remoteCaseId, `${id}-stamped-${Date.now()}`, file);
         }
       } catch (err) {
         console.error("Re-stamp after renumber failed:", err);
@@ -1097,10 +1100,11 @@ async function shareExhibit(id) {
       });
       // Update opposing counsel's "Introduced Exhibits" roster in place — it is
       // built from exhibit_marked events on the session channel and would
-      // otherwise keep showing the old number until reload.
+      // otherwise keep showing the old number until reload. Matched by
+      // exhibit_id (robust even if two exhibits share a name).
       await privateChannel(`session:${activeSession.id}`).send({
         type: "broadcast", event: "exhibit_renumbered",
-        payload: { exhibit_name: ex.name, old_num: oldNum, new_num: newNum },
+        payload: { exhibit_id: ex.id, new_num: newNum },
       });
     }
   }

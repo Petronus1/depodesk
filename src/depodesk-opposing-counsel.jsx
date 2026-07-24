@@ -94,8 +94,9 @@ export default function OpposingCounselView() {
           .on("broadcast", { event: "exhibit_renumbered" }, ({ payload }) => {
             // Host renumbered an already-introduced exhibit — update its number
             // in place so the roster doesn't show a stale one until reload.
+            // Matched by exhibit_id (the exhibit_marked events carry it).
             setIntroducedExhibits(prev => prev.map(e =>
-              (e.exhibit_name === payload.exhibit_name && e.exhibit_num === payload.old_num)
+              e.exhibit_id === payload.exhibit_id
                 ? { ...e, exhibit_num: payload.new_num }
                 : e));
           })
