@@ -355,7 +355,7 @@ export default function OpposingCounselView() {
                 fileUrl ? (
                   currentExhibit.type === "Image"
                     ? <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><img src={fileUrl} alt={currentExhibit.name} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /></div>
-                    : <iframe src={fileUrl} title={currentExhibit.name} style={{ width: "100%", height: "100%", border: "none" }} />
+                    : <PDFViewer url={fileUrl} mode="observer" sessionId={sessionId} exhibitId={currentExhibit.id} />
                 ) : (
                   <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <div style={{ border: `2px solid ${GOLD}`, borderRadius: 8, padding: "20px 40px", textAlign: "center" }}>

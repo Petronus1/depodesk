@@ -171,6 +171,7 @@ export default function PDFViewer({
   const annotateChanRef = useRef(null); // witness: subscribed channel for sending strokes
   const isHost       = mode === "host";
   const isWitness    = mode === "witness";
+  const isObserver   = mode === "observer"; // read-only follower (e.g. opposing counsel)
 
   // ── Load PDF ──────────────────────────────────────────────
  useEffect(() => {
@@ -233,6 +234,23 @@ export default function PDFViewer({
       if (annotateChanRef.current) { supabase.removeChannel(annotateChanRef.current); annotateChanRef.current = null; }
     };
   }, [isWitness, sessionId, exhibitId]);
+
+  // ── Observer (e.g. opposing counsel): follow the host's page sync,
+  //    read-only. Never subscribes to markup, so it can't participate
+  //    in witness annotation.
+  useEffect(() => {
+    if (!isObserver || !sessionId) return;
+    const ch = privateChannel(`pdf-sync:${sessionId}`)
+      .on("broadcast", { event: "force_page" }, ({ payload }) => {
+        if (payload.exhibitId !== exhibitId) return;
+        setCurrentPage(payload.page);
+        scrollToPage(payload.page);
+        setDirected(true);
+        setTimeout(() => setDirected(false), 1500);
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [isObserver, sessionId, exhibitId]);
 
   // ── Host: receive witness strokes while markup is live ────
   useEffect(() => {
@@ -332,6 +350,13 @@ export default function PDFViewer({
         {isWitness && directed && !markup && (
           <span style={{ fontSize: 11, color: GOLD, marginLeft: "auto", animation: "fadeout 1.5s forwards" }}>
             ⬆ Counsel directed you here
+          </span>
+        )}
+
+        {/* Observer (opposing counsel): the witness was directed to a page */}
+        {isObserver && directed && (
+          <span style={{ fontSize: 11, color: GOLD, marginLeft: "auto", animation: "fadeout 1.5s forwards" }}>
+            ⬆ Counsel directed the witness here
           </span>
         )}
 

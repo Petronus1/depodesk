@@ -144,10 +144,10 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   function, so React StrictMode (dev only) can double-subscribe. The
   OC Introduced-Exhibits append is dedup-guarded by event id; a proper
   fix is a per-effect `cancelled` flag that always removes its channel.
-- OC's live view of a HOST-pushed exhibit still uses an `<iframe>` (renders
-  in real browsers, not in the headless preview) and does not follow
-  host page-sync; the re-open modal and OC's own presentation use the
-  pdfjs `PDFViewer`.
+- ~~OC's live view of a HOST-pushed exhibit used an `<iframe>` and didn't
+  follow page-sync.~~ ✅ Fixed — now the pdfjs `PDFViewer` in a new
+  read-only `mode="observer"` (follows host `force_page`, never joins
+  witness markup). Live two-party page-sync still wants an end-to-end check.
 - ~~Pre-existing lint: conditional `useCallback` after the `isWitness`
   early return in depo-exhibit-app.jsx.~~ ✅ Fixed 2026-07-22 (`77ed874`) —
   `onDrop` is now a plain function; unused `useCallback` import removed.
