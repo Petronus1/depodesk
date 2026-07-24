@@ -40,10 +40,15 @@ smaller, no visual change except those three backgrounds a hair lighter.
 ## Open items
 
 **Big, standalone (each its own session):**
-1. **Split `depo-exhibit-app.jsx`** (~1,640 lines — owns cases, depositions,
-   exhibits, sessions, sharing, annotations, stamping). Pull session/sharing and the
-   annotation layer into their own modules. It still uses inline hex colors; fold
-   those into `theme.js` as part of the split.
+1. **Split `depo-exhibit-app.jsx`** — IN PROGRESS. Extracted so far (verbatim,
+   verified, committed): the annotation layer → `depodesk-annotations.jsx`, the
+   three side panels → `depodesk-panels.jsx`, and the local store + seed data →
+   `depodesk-store.js`. File is now ~1,315 lines (was ~1,770). **Deferred:** the
+   session/sharing logic is deeply coupled to exhibit/case state (95 references;
+   `shareExhibit` alone reads 8 App-local things), so extracting it cleanly needs a
+   state-lift or a wide-interface hook — its own careful pass with a live two-party
+   test, not a tack-on. Also still deferred: folding inline hex colors into
+   `theme.js`.
 2. **Tests** — none exist. Highest value: exhibit numbering (incl. the concurrency
    guard + renumber), the `isUuid` guard in `logSessionEvent`, `sanitizeCases`.
 3. **OC live view of a host-pushed exhibit uses an `<iframe>`** — doesn't follow host

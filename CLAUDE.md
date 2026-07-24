@@ -17,8 +17,14 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
 - `src/App.jsx` — router by pathname: `/join`, `/witness`,
   `/opposing-counsel`, `/court-reporter`, else attorney app (auth-gated;
   anonymous sessions are bounced to the sign-in screen)
-- `src/depo-exhibit-app.jsx` — main attorney app (cases/depos/exhibits
-  panels, sessions, sharing, annotations)
+- `src/depo-exhibit-app.jsx` — main attorney app (exhibit list/viewer,
+  sessions, sharing, marking/renumbering). Was ~1,770 lines; the
+  self-contained pieces are now split out:
+  - `src/depodesk-annotations.jsx` — attorney's private markup layer
+  - `src/depodesk-panels.jsx` — CasesPanel / DepositionsPanel / ImportSelector
+  - `src/depodesk-store.js` — localStorage keys/helpers, sanitizeCases, SEED_CASES
+  Session/sharing logic still lives in App (deeply coupled to exhibit/
+  case state — extracting it needs a state-lift, deferred to its own pass).
 - `src/depodesk-supabase.js` — all Supabase access + `useAuth` and
   the `privateChannel()` helper + `logSessionEvent`
 - `src/depodesk-join.jsx` — PIN join flow (anonymous sign-in happens here)
