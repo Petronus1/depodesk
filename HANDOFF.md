@@ -51,15 +51,17 @@ smaller, no visual change except those three backgrounds a hair lighter.
    `theme.js`.
 2. **Tests** — none exist. Highest value: exhibit numbering (incl. the concurrency
    guard + renumber), the `isUuid` guard in `logSessionEvent`, `sanitizeCases`.
-3. **OC live view of a host-pushed exhibit uses an `<iframe>`** — doesn't follow host
-   page-sync and won't render in the headless preview. Upgrade it to the pdfjs
-   `PDFViewer` (the re-open modal and OC's own presentation already use it).
+3. ~~**OC live view of a host-pushed exhibit uses an `<iframe>`**~~ ✅ Done
+   (`2dbe9cb`) — now the pdfjs `PDFViewer` in a new read-only `mode="observer"`:
+   follows the host's `force_page` but never subscribes to markup. Live
+   two-party page-sync confirmed working.
 
 **Smaller / deferred:**
 - Renumber's duplicate-number check uses a native `confirm()`; a proper modal would
   be nicer (host-only prompt, low priority).
 - OC roster live-update after renumber is logic-verified but wants a real **two-party
-  session** (host + OC) to exercise end to end.
+  session** (host + OC) to exercise end to end. (Now matched by `exhibit_id`, and
+  re-stamps write a versioned path — `e5601fa`.)
 - Realtime: participant views subscribe inside an async `connect()` → StrictMode
   (dev) can double-subscribe (currently dedup-guarded; proper fix is a per-effect
   `cancelled` flag). Reuse one channel per session; revoke blob object URLs.
