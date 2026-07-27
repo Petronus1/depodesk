@@ -8,6 +8,7 @@ import { stampPdf, flattenMarkup } from "./depodesk-stamp"
 import { AnnotationLayer, AnnotationToolbar } from "./depodesk-annotations"
 import { CasesPanel, DepositionsPanel, ImportSelector } from "./depodesk-panels"
 import { STORAGE_KEY, ANN_KEY, META_KEY, SESSION_KEY, storageGet, storageSet, storageDel, sanitizeCases, SEED_CASES } from "./depodesk-store"
+import { indexExhibitText } from "./depodesk-fulltext"
 
 const typeColors = {
   PDF:   { bg: "#1E3A5F", text: "#7EB3E8" },
@@ -341,6 +342,23 @@ export default function App() {
     }));
   }
 
+  // Record how an exhibit fared in the full-text index, on the exhibit
+  // itself, so the status stays visible (and survives a refresh) rather
+  // than flashing past in a toast.
+  //   { state: "indexing" | "indexed" | "no-text" | "failed",
+  //     pageCount?, detail? }
+  function setIndexStatus(exhibitId, searchIndex) {
+    updateCases(prev => prev.map(c => {
+      if (c.id !== activeCaseId) return c;
+      const apply = e => e.id === exhibitId ? { ...e, searchIndex } : e;
+      return {
+        ...c,
+        library: (c.library || []).map(apply),
+        depositions: (c.depositions || []).map(d => ({ ...d, exhibits: d.exhibits.map(apply) })),
+      };
+    }));
+  }
+
   // Add an opposing-counsel-presented document to the session's
   // deposition (or the case library if the session is on the library),
   // de-duplicated by id. Provenance is persisted as `introducedBy`.
@@ -460,6 +478,13 @@ async function shareExhibit(id) {
         const path = await uploadExhibitFile(remoteCaseId, id, file);
         updateExhibits(exs => exs.map(e => e.id === id ? { ...e, file_path: path } : e));
         ex = { ...ex, file_path: path };
+        // This is the first time the file reached storage — index its text
+        // for case-wide search (fire-and-forget; never blocks the share).
+        if (ex.type === "PDF") {
+          blob.arrayBuffer()
+            .then(buf => indexExhibitText(remoteCaseId, path, ex.name, buf))
+            .catch(err => console.error("Text indexing failed:", err));
+        }
       } catch (err) {
         console.error("Failed to upload exhibit before sharing:", err);
         notify("Upload failed — participants will see exhibit card only", "#F87171");
@@ -761,18 +786,8 @@ async function shareExhibit(id) {
     const type = file.type.includes("pdf") ? "PDF" : file.type.includes("image") ? "Image" : "PDF";
     updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, fileUrl: url, type } : e));
     notify("File attached", "#4CAF82");
-    if (activeCaseId) {
-      try {
-        // Store under the Supabase case UUID so storage RLS can owner-scope it.
-        const remoteCaseId = await ensureRemoteCaseId();
-        if (remoteCaseId) {
-          const path = await uploadExhibitFile(remoteCaseId, exhibitId, file);
-          updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, file_path: path } : e));
-        }
-      } catch (err) {
-        console.error("Failed to upload exhibit to storage:", err);
-      }
-    }
+    const exName = exhibits.find(e => e.id === exhibitId)?.name || file.name;
+    await uploadAndIndex(exhibitId, file, type, exName);
   }
 
   function addExhibit(file) {
@@ -818,6 +833,42 @@ async function shareExhibit(id) {
 
     setNewExhibit({ name: "", type: "PDF", date: "", tags: "" });
     setShowAddExhibit(false);
+
+    // A file added here used to stay a local blob until the exhibit was
+    // shared or marked — which meant it never reached storage and never
+    // got text-indexed. Upload + index it now, same as attachFile.
+    if (file) uploadAndIndex(newId, file, type, name);
+  }
+
+  // Shared by attachFile and addExhibit: put the file in storage under the
+  // case UUID, then index its text for case-wide search. Records progress
+  // on the exhibit (searchIndex) so the outcome stays visible.
+  async function uploadAndIndex(exhibitId, file, type, exhibitName) {
+    if (!activeCaseId) return;
+    // Read bytes before any awaits — the <input> that produced this File is
+    // cleared by the caller, and Safari can invalidate the read afterwards.
+    const bytesPromise = type === "PDF" ? file.arrayBuffer().catch(() => null) : Promise.resolve(null);
+    try {
+      const remoteCaseId = await ensureRemoteCaseId();
+      if (!remoteCaseId) {
+        setIndexStatus(exhibitId, { state: "failed", detail: "case not synced to Supabase" });
+        return;
+      }
+      const path = await uploadExhibitFile(remoteCaseId, exhibitId, file);
+      updateExhibits(exs => exs.map(e => e.id === exhibitId ? { ...e, file_path: path } : e));
+
+      if (type !== "PDF") return; // images carry no text layer
+      setIndexStatus(exhibitId, { state: "indexing" });
+      const buf = await bytesPromise;
+      if (!buf) { setIndexStatus(exhibitId, { state: "failed", detail: "couldn't read the file" }); return; }
+      const res = await indexExhibitText(remoteCaseId, path, exhibitName, buf);
+      if (res?.error)         setIndexStatus(exhibitId, { state: "failed", detail: res.error });
+      else if (!res?.hasText) setIndexStatus(exhibitId, { state: "no-text", pageCount: res?.pageCount });
+      else                    setIndexStatus(exhibitId, { state: "indexed", pageCount: res.pageCount });
+    } catch (err) {
+      console.error("Upload/index failed:", err);
+      setIndexStatus(exhibitId, { state: "failed", detail: err?.message || String(err) });
+    }
   }
 
   function clearAnnotations() {
@@ -1125,6 +1176,18 @@ async function shareExhibit(id) {
                   </div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: "#E8EDF5", marginTop: 1 }}>{activeExhibit.name}</div>
                   {activeDepo && <div style={{ fontSize: 11, color: "#4A6080", marginTop: 2 }}>{activeDepo.witness} · {activeDepo.date}</div>}
+                  {/* Full-text search status — persistent, so a failure is
+                      visible instead of flashing past in a toast. */}
+                  {activeExhibit.searchIndex && (() => {
+                    const si = activeExhibit.searchIndex;
+                    const look = {
+                      indexing: { c: "#7A93B8", t: "Indexing for search…" },
+                      indexed:  { c: "#4CAF82", t: `🔍 Searchable · ${si.pageCount ?? "?"} pages` },
+                      "no-text":{ c: "#C9A84C", t: `🔍 Not searchable — no text layer (${si.pageCount ?? "?"} pages). OCR before upload to make it searchable.` },
+                      failed:   { c: "#F87171", t: `🔍 Indexing failed — ${si.detail || "unknown error"}` },
+                    }[si.state];
+                    return look ? <div style={{ fontSize: 11, color: look.c, marginTop: 3 }}>{look.t}</div> : null;
+                  })()}
                 </div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button onClick={() => { setShowAnnotations(v => !v); setAnnTool(showAnnotations ? "none" : "pen"); }} style={{
