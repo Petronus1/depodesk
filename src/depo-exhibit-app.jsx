@@ -8,7 +8,8 @@ import { stampPdf, flattenMarkup } from "./depodesk-stamp"
 import { AnnotationLayer, AnnotationToolbar } from "./depodesk-annotations"
 import { CasesPanel, DepositionsPanel, ImportSelector } from "./depodesk-panels"
 import { STORAGE_KEY, ANN_KEY, META_KEY, SESSION_KEY, storageGet, storageSet, storageDel, sanitizeCases, SEED_CASES } from "./depodesk-store"
-import { indexExhibitText } from "./depodesk-fulltext"
+import { indexExhibitText, searchExhibitText, getUnsearchableExhibits } from "./depodesk-fulltext"
+import SearchResults from "./depodesk-search"
 
 const typeColors = {
   PDF:   { bg: "#1E3A5F", text: "#7EB3E8" },
@@ -102,6 +103,11 @@ export default function App() {
   const [activeDepoId, setActiveDepoId] = useState("__library__");
   const [activeExhibitId, setActiveExhibitId] = useState(null);
   const [search, setSearch]             = useState("");
+  const [searchMode, setSearchMode]     = useState("name");   // "name" (filter list) | "contents" (case-wide full-text)
+  const [contentResults, setContentResults] = useState([]);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [unsearchableCount, setUnsearchableCount] = useState(0);
+  const [backfill, setBackfill]         = useState(null);     // null | { pending, running, done, total }
   const [sharedId, setSharedId]         = useSharedState(null);
   const [showAddExhibit, setShowAddExhibit] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -143,6 +149,109 @@ export default function App() {
     e.label.toLowerCase().includes(search.toLowerCase()) ||
     e.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
   );
+
+  // ── Case-wide content search (full-text over uploaded PDFs) ──────
+  // Map a search hit's storage_path back to where the exhibit lives
+  // locally. Marking re-stamps to a new file_path and moves the indexed
+  // original to original_path, so a hit may match either.
+  function locateByStoragePath(path) {
+    if (!activeCase || !path) return null;
+    const hit = e => e.file_path === path || e.original_path === path;
+    const lib = (activeCase.library || []).find(hit);
+    if (lib) return { depoId: "__library__", exhibitId: lib.id, marked: lib.marked, exhibitNum: lib.exhibitNum, locationLabel: "Case Library" };
+    for (const d of (activeCase.depositions || [])) {
+      const e = (d.exhibits || []).find(hit);
+      if (e) return { depoId: d.id, exhibitId: e.id, marked: e.marked, exhibitNum: e.exhibitNum, locationLabel: d.witness ? `${d.witness} depo` : "Deposition" };
+    }
+    return null;
+  }
+  const enrichedResults = contentResults.map(r => ({ ...r, loc: locateByStoragePath(r.storage_path) }));
+
+  function openSearchResult(loc) {
+    setActiveDepoId(loc.depoId);
+    setActiveExhibitId(loc.exhibitId);
+    setShowAnnotations(false); setAnnTool("none"); setEditingNum(false);
+  }
+
+  // PDF exhibits in this case whose text isn't in the index yet (uploaded
+  // before search existed, or on a device that had no indexer).
+  function pdfExhibitsNeedingIndex(indexedSet) {
+    if (!activeCase) return [];
+    const seen = new Set(), targets = [];
+    const collect = e => {
+      if (e.type !== "PDF") return;
+      const orig = e.original_path, fp = e.file_path;
+      if ((orig && indexedSet.has(orig)) || (fp && indexedSet.has(fp))) return;
+      const path = orig || fp;
+      if (!path || seen.has(path)) return;
+      seen.add(path);
+      targets.push({ name: e.name, path });
+    };
+    (activeCase.library || []).forEach(collect);
+    (activeCase.depositions || []).forEach(d => (d.exhibits || []).forEach(collect));
+    return targets;
+  }
+
+  // Debounced content search while in "contents" mode.
+  useEffect(() => {
+    if (searchMode !== "contents") return;
+    const remoteCaseId = activeCase?.remoteId;
+    const q = search.trim();
+    if (!remoteCaseId || !q) { setContentResults([]); setContentLoading(false); return; }
+    setContentLoading(true);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const hits = await searchExhibitText(remoteCaseId, q);
+      if (!cancelled) { setContentResults(hits); setContentLoading(false); }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [searchMode, search, activeCase?.remoteId]);
+
+  // On entering contents mode (or switching case), tally scanned exhibits
+  // (no text layer) and how many older uploads still need indexing.
+  useEffect(() => {
+    if (searchMode !== "contents") { setBackfill(null); return; }
+    const remoteCaseId = activeCase?.remoteId;
+    if (!remoteCaseId) { setUnsearchableCount(0); setBackfill(null); return; }
+    let cancelled = false;
+    (async () => {
+      const unsearch = await getUnsearchableExhibits(remoteCaseId);
+      const { data } = await supabase.from("exhibit_text").select("storage_path").eq("case_id", remoteCaseId);
+      const indexed = new Set((data || []).map(r => r.storage_path));
+      const pending = pdfExhibitsNeedingIndex(indexed).length;
+      if (!cancelled) {
+        setUnsearchableCount(unsearch.length);
+        setBackfill(pending > 0 ? { pending, running: false, done: 0, total: 0 } : null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [searchMode, activeCaseId]);
+
+  async function runBackfill() {
+    const remoteCaseId = activeCase?.remoteId;
+    if (!remoteCaseId) return;
+    const { data } = await supabase.from("exhibit_text").select("storage_path").eq("case_id", remoteCaseId);
+    const indexed = new Set((data || []).map(r => r.storage_path));
+    const targets = pdfExhibitsNeedingIndex(indexed);
+    if (targets.length === 0) { setBackfill(null); return; }
+    setBackfill({ pending: targets.length, running: true, done: 0, total: targets.length });
+    for (let i = 0; i < targets.length; i++) {
+      try {
+        const url = await getExhibitFileUrl(targets[i].path);
+        await indexExhibitText(remoteCaseId, targets[i].path, targets[i].name, url);
+      } catch (err) { console.error("Backfill index failed for", targets[i].path, err); }
+      setBackfill(b => (b ? { ...b, done: i + 1 } : b));
+    }
+    setBackfill(null);
+    const unsearch = await getUnsearchableExhibits(remoteCaseId);
+    setUnsearchableCount(unsearch.length);
+    if (search.trim()) {
+      setContentLoading(true);
+      const hits = await searchExhibitText(remoteCaseId, search.trim());
+      setContentResults(hits); setContentLoading(false);
+    }
+    notify("Older exhibits indexed for search", "#4CAF82");
+  }
 
   // Witness
   const [witnessExhibit, setWitnessExhibit] = useState(null);
@@ -1081,11 +1190,38 @@ async function shareExhibit(id) {
             <div style={{ fontSize: 10, color: "#4A6080", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 6 }}>
               {isLibrary ? "Case Library" : `${activeDepo?.witness || ""} — Exhibits`}
             </div>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ ...inputStyle, padding: "6px 10px", fontSize: 12 }} />
+            {/* Name = filter this list; Contents = case-wide full-text search */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {[["name", "Name"], ["contents", "Contents"]].map(([m, label]) => (
+                <button key={m} onClick={() => setSearchMode(m)} style={{
+                  flex: 1, padding: "3px 0", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px",
+                  borderRadius: 4, cursor: "pointer", fontFamily: "inherit",
+                  background: searchMode === m ? "#162540" : "transparent",
+                  border: `1px solid ${searchMode === m ? "#C9A84C" : "#1E3254"}`,
+                  color: searchMode === m ? "#C9A84C" : "#4A6080",
+                }}>{label}</button>
+              ))}
+            </div>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder={searchMode === "contents" ? "Search document text…" : "Filter by name or tag…"}
+              style={{ ...inputStyle, padding: "6px 10px", fontSize: 12 }} />
           </div>
           <div style={{ padding: "0 12px 6px", fontSize: 10, color: "#4A6080", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px" }}>
-            {filtered.length} exhibit{filtered.length !== 1 ? "s" : ""}
+            {searchMode === "contents"
+              ? (search.trim() ? `${enrichedResults.length} match${enrichedResults.length !== 1 ? "es" : ""}` : "Full-text search")
+              : `${filtered.length} exhibit${filtered.length !== 1 ? "s" : ""}`}
           </div>
+          {searchMode === "contents" ? (
+            <SearchResults
+              query={search}
+              loading={contentLoading}
+              results={enrichedResults}
+              onOpen={openSearchResult}
+              unsearchableCount={unsearchableCount}
+              backfill={backfill}
+              onBackfill={runBackfill}
+            />
+          ) : (
           <div style={{ overflowY: "auto", flex: 1 }}>
             {filtered.length === 0 && (
               <div style={{ padding: "20px 12px", textAlign: "center", color: "#2A3F58", fontSize: 12 }}>
@@ -1139,6 +1275,7 @@ async function shareExhibit(id) {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Viewer */}
