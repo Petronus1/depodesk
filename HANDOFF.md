@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-24._
 
-**Repo state:** `origin/main` is at **`ea3f45b`**. Everything below is committed,
+**Repo state:** `origin/main` is at **`90f79dd`**. Everything below is committed,
 pushed, and (where noted) live in Supabase. Working tree clean, nothing unpushed.
 
 Pick up elsewhere: `git pull`, then jump to **Next up**.
@@ -11,26 +11,35 @@ Pick up elsewhere: `git pull`, then jump to **Next up**.
 
 ## Next up (start here)
 
-**Finish full-text search.** Indexing works and is verified; the UI that uses it
-does not exist yet. Two pieces remain:
+**Validate the content-search UI against real data.** It's built and pushed
+(`90f79dd`) but has only been checked structurally (compile, lint, `highlightSnippet`,
+and Contents-mode rendering via the auth-bypass on seed data). Not yet exercised
+against a real indexed case. When logged in on a case with indexed exhibits:
 
-1. **Search UI** — case-wide results panel. The plumbing is already built and
-   tested: `searchExhibitText(caseId, query)` in `src/depodesk-fulltext.js` calls
-   the `search_exhibit_text` RPC and returns
-   `[{ storage_path, exhibit_name, page_count, snippet, rank }]`, ranked, with
-   `«…»`-delimited highlights. Needs: a results view (which deposition/library each
-   hit lives in, snippet, click-to-open), and a way to switch between today's
-   metadata filter and content search. Also surface
-   `getUnsearchableExhibits(caseId)` in the results footer ("N exhibits couldn't be
-   text-searched") so a negative result stays trustworthy.
-2. **Backfill** — exhibits uploaded before 2026-07-24 have no `exhibit_text` row, so
-   they're invisible to content search. Needs a one-time pass: for each exhibit with
-   a `file_path`, fetch → `extractPdfText` → upsert. Could be a hidden button or a
-   run-once-on-load routine.
+1. **Search** — type in Contents mode, confirm ranked hits render with the `«…»`
+   highlights, the right location label (Library / which deposition), and page count.
+2. **Click-to-open** — a hit should navigate to its deposition and open the exhibit.
+   Mapping is by `file_path` OR `original_path` (marking moves the indexed original to
+   `original_path`), so test a *marked* exhibit too.
+3. **Backfill** — on a case with pre-index uploads, the "Index N for search" button
+   should appear, index them with progress, then results should include them.
+4. **Safari** — backfill/indexing reuses `extractPdfText`; run it in real Safari.
+   Chromium can't catch the `ReadableStream` class of bug.
+
+If something's off, the UI is in `src/depodesk-search.jsx` (presentational) +
+orchestration in `depo-exhibit-app.jsx` (`locateByStoragePath`, the two content-search
+effects, `runBackfill`).
 
 ---
 
 ## Shipped this session (all pushed)
+
+**Content-search UI + backfill** (`90f79dd`, 2026-07-24, this machine) — built on the
+indexing plumbing below. New `src/depodesk-search.jsx` renders ranked hits with `«…»`
+highlights, location label, page count, and click-to-open; a Name/Contents toggle on
+the exhibit-list search box switches between the metadata filter and case-wide
+full-text search; old uploads get an "Index N for search" backfill button. **Structurally
+verified only — see _Next up_ for the real-data validation still owed.**
 
 **Full-text indexing** (`ea3f45b`) — text is extracted in the browser with pdfjs
 (already a dependency; no server compute, nothing leaves Supabase) and upserted into
@@ -69,7 +78,7 @@ layer), `depodesk-panels.jsx` (CasesPanel/DepositionsPanel/ImportSelector),
 ## Open items
 
 **Big, standalone:**
-1. **Search UI + backfill** — see *Next up*.
+1. **Search UI + backfill** — built (`90f79dd`); real-data validation still owed, see *Next up*.
 2. **Tests** — none exist. Highest value: exhibit numbering (concurrency guard +
    renumber), `isUuid` in `logSessionEvent`, `sanitizeCases`, and now
    `extractPdfText`.
@@ -91,9 +100,9 @@ layer), `depodesk-panels.jsx` (CasesPanel/DepositionsPanel/ImportSelector),
 - ~20 intentional lint warnings (mostly deliberate `exhaustive-deps`).
 
 **Wants your input:**
-- **Search field scope** — decided: case-wide content search with a results panel
-  (above). Open sub-question: should the box also still filter the current list by
-  name/tag, or fully switch to content search?
+- **Search field scope** — resolved as a Name/Contents toggle: keeps the metadata
+  filter AND adds case-wide content search, sharing the one search box. Revisit only
+  if you'd rather it fully switch to content search instead of toggling.
 - OCR: you said your paralegal can OCR before upload. That's what makes scans
   searchable — nothing in the app does OCR.
 
