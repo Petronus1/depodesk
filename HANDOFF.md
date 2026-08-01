@@ -2,7 +2,7 @@
 
 _Last updated: 2026-07-27._
 
-**Repo state:** `origin/main` is at **`a7ad8d5`**. Everything below is committed,
+**Repo state:** `origin/main` is at **`8e2c50a`**. Everything below is committed,
 pushed, and (where noted) live in Supabase. Working tree clean, nothing unpushed.
 
 Pick up elsewhere: `git pull`, then jump to **Next up**.
@@ -11,28 +11,40 @@ Pick up elsewhere: `git pull`, then jump to **Next up**.
 
 ## Next up (start here)
 
-**Validate the content-search UI against real data.** Built (`90f79dd`) and then
-review-fixed (`a7ad8d5`), but still only checked structurally — never exercised
-against a real indexed case. When logged in on a case with indexed exhibits:
+**Content search is validated and working — pick any open item below.** The most
+valuable is probably **tests** (see Open items), since the crash found during this
+validation was a pre-existing null-guard bug that every round of manual testing had
+missed. It would have been a two-line unit test.
 
-1. **Search** — type in Contents mode, confirm ranked hits render with the `«…»`
-   highlights, the right location label (Library / which deposition), and page count.
-2. **Click-to-open** — a hit should navigate to its deposition and open the exhibit.
-   Mapping is by `file_path` OR `original_path` (marking moves the indexed original to
-   `original_path`), so test a *marked* exhibit too.
-3. **Backfill** — on a case with pre-index uploads, the "Index N for search" button
-   should appear, index them with progress, then results should include them. Also try
-   **Stop** mid-run: it should halt, report "Stopped — N indexed", and leave an
-   accurate pending count you can resume from.
-4. **Unsearchable case** — open Contents mode on a case that has never synced
-   (no session ever started, no file attached). It must say "This case isn't
-   searchable yet" and must NOT say "No matches".
-5. **Safari** — backfill/indexing reuses `extractPdfText`; run it in real Safari.
-   Chromium can't catch the `ReadableStream` class of bug.
+Two small things never exercised, if you want to close them out first:
+- **Unsearchable-case copy** — open Contents mode on a case that has *never* synced
+  (no session started, no file attached). Should read "This case isn't searchable yet",
+  never "No matches". (Logic verified by direct render, not in the live app.)
+- **Backfill Stop** — the cancel path. The 8-exhibit backfill ran to completion, so
+  Stop mid-run was never clicked.
 
-If something's off, the UI is in `src/depodesk-search.jsx` (presentational) +
-orchestration in `depo-exhibit-app.jsx` (`locateByStoragePath`, the two content-search
-effects, `runBackfill` / `cancelBackfill`).
+---
+
+## Validated 2026-07-27 (real data, Safari)
+
+Content search now works end to end against a real indexed case:
+- **Search** returns ranked hits from document text.
+- **Click-to-open** navigates to the exhibit and opens it.
+- **Backfill** indexed 8 pre-existing exhibits, which then appeared in results — also
+  the first time `extractPdfText` ran in bulk in Safari, confirming the
+  `ReadableStream` fix under real load rather than a synthetic PDF.
+
+Two bugs fixed along the way:
+- **App-wide crash (`8e2c50a`)** — the exhibit-list filter called
+  `e.label.toLowerCase()` unguarded, but an unmarked exhibit has `label === null`. So
+  typing *anything* in the search box white-screened the app whenever the list held an
+  unmarked exhibit (i.e. any newly added one). **Pre-existing**, unrelated to search:
+  `filtered` recomputes every render regardless of mode. It escaped all prior testing
+  because every `SEED_CASES` exhibit has a label — only user-created ones are null.
+- **Error boundary (`aa3c7ba`)** — a render crash used to blank the entire app, which
+  is unacceptable mid-deposition and hid the cause. Now shows the error + component
+  stack with a Reload. It paid for itself immediately: it pinpointed the crash above
+  to an exact line after console debugging in Safari had stalled.
 
 ---
 
@@ -100,11 +112,14 @@ layer), `depodesk-panels.jsx` (CasesPanel/DepositionsPanel/ImportSelector),
 ## Open items
 
 **Big, standalone:**
-1. **Search UI + backfill** — built (`90f79dd`), review-fixed (`a7ad8d5`); real-data
-   validation still owed, see *Next up*.
-2. **Tests** — none exist. Highest value: exhibit numbering (concurrency guard +
-   renumber), `isUuid` in `logSessionEvent`, `sanitizeCases`, and now
-   `extractPdfText`.
+1. ~~**Search UI + backfill**~~ ✅ built (`90f79dd`), review-fixed (`a7ad8d5`),
+   validated against real data 2026-07-27. Only the two small paths in *Next up*
+   remain unexercised.
+2. **Tests** — none exist, and this session showed the cost: the `label === null`
+   crash was pre-existing, reachable by typing one character, and survived every
+   round of manual testing because seed data always has labels. Highest value:
+   the exhibit-list filter guards, exhibit numbering (concurrency guard + renumber),
+   `isUuid` in `logSessionEvent`, `sanitizeCases`, `extractPdfText`.
 3. **Session/sharing extraction** — the deferred half of the split. Deeply coupled to
    exhibit/case state (95 refs; `shareExhibit` alone reads 8 App-local things), so it
    needs a real state-lift and a live two-party test, not a tack-on.
