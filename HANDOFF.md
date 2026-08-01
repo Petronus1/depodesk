@@ -1,8 +1,8 @@
 # DepoDesk — Session Handoff
 
-_Last updated: 2026-07-24._
+_Last updated: 2026-07-27._
 
-**Repo state:** `origin/main` is at **`90f79dd`**. Everything below is committed,
+**Repo state:** `origin/main` is at **`a7ad8d5`**. Everything below is committed,
 pushed, and (where noted) live in Supabase. Working tree clean, nothing unpushed.
 
 Pick up elsewhere: `git pull`, then jump to **Next up**.
@@ -11,9 +11,8 @@ Pick up elsewhere: `git pull`, then jump to **Next up**.
 
 ## Next up (start here)
 
-**Validate the content-search UI against real data.** It's built and pushed
-(`90f79dd`) but has only been checked structurally (compile, lint, `highlightSnippet`,
-and Contents-mode rendering via the auth-bypass on seed data). Not yet exercised
+**Validate the content-search UI against real data.** Built (`90f79dd`) and then
+review-fixed (`a7ad8d5`), but still only checked structurally — never exercised
 against a real indexed case. When logged in on a case with indexed exhibits:
 
 1. **Search** — type in Contents mode, confirm ranked hits render with the `«…»`
@@ -22,24 +21,47 @@ against a real indexed case. When logged in on a case with indexed exhibits:
    Mapping is by `file_path` OR `original_path` (marking moves the indexed original to
    `original_path`), so test a *marked* exhibit too.
 3. **Backfill** — on a case with pre-index uploads, the "Index N for search" button
-   should appear, index them with progress, then results should include them.
-4. **Safari** — backfill/indexing reuses `extractPdfText`; run it in real Safari.
+   should appear, index them with progress, then results should include them. Also try
+   **Stop** mid-run: it should halt, report "Stopped — N indexed", and leave an
+   accurate pending count you can resume from.
+4. **Unsearchable case** — open Contents mode on a case that has never synced
+   (no session ever started, no file attached). It must say "This case isn't
+   searchable yet" and must NOT say "No matches".
+5. **Safari** — backfill/indexing reuses `extractPdfText`; run it in real Safari.
    Chromium can't catch the `ReadableStream` class of bug.
 
 If something's off, the UI is in `src/depodesk-search.jsx` (presentational) +
 orchestration in `depo-exhibit-app.jsx` (`locateByStoragePath`, the two content-search
-effects, `runBackfill`).
+effects, `runBackfill` / `cancelBackfill`).
 
 ---
 
 ## Shipped this session (all pushed)
 
-**Content-search UI + backfill** (`90f79dd`, 2026-07-24, this machine) — built on the
-indexing plumbing below. New `src/depodesk-search.jsx` renders ranked hits with `«…»`
+**Content-search UI + backfill** (`90f79dd`, 2026-07-24) — built on the indexing
+plumbing below. New `src/depodesk-search.jsx` renders ranked hits with `«…»`
 highlights, location label, page count, and click-to-open; a Name/Contents toggle on
 the exhibit-list search box switches between the metadata filter and case-wide
 full-text search; old uploads get an "Index N for search" backfill button. **Structurally
 verified only — see _Next up_ for the real-data validation still owed.**
+
+**Search review fixes** (`a7ad8d5`, 2026-07-27) — three issues found reviewing the
+above:
+- **False negative (the important one).** A case with no `remoteId` — never synced to
+  Supabase, i.e. never hosted a session and never had a file attached — cleared the
+  results and rendered *"No matches for X"*. The search had never run, so mid-deposition
+  that reads as "this document isn't in the case." `SearchResults` now takes
+  `searchable` and shows *"This case isn't searchable yet"* plus how to fix it; the list
+  header reads "Not searchable" instead of a match count.
+- The pending/unsearchable tally effect read `activeCase?.remoteId` without depending on
+  it, so a case that gained one mid-session kept a stale count until modes were toggled.
+- Backfill had no way out: now a **Stop** button, an honest re-tally after a partial run,
+  and a "Stopped — N indexed" report.
+
+Verified by rendering `SearchResults` directly against each state (unsynced+query →
+not-searchable copy, never "no matches"; genuine no-match still says "no matches";
+result row shows name/location/exhibit number/pages with `«…»` as `<mark>`; running
+backfill shows progress + Stop).
 
 **Full-text indexing** (`ea3f45b`) — text is extracted in the browser with pdfjs
 (already a dependency; no server compute, nothing leaves Supabase) and upserted into
@@ -78,7 +100,8 @@ layer), `depodesk-panels.jsx` (CasesPanel/DepositionsPanel/ImportSelector),
 ## Open items
 
 **Big, standalone:**
-1. **Search UI + backfill** — built (`90f79dd`); real-data validation still owed, see *Next up*.
+1. **Search UI + backfill** — built (`90f79dd`), review-fixed (`a7ad8d5`); real-data
+   validation still owed, see *Next up*.
 2. **Tests** — none exist. Highest value: exhibit numbering (concurrency guard +
    renumber), `isUuid` in `logSessionEvent`, `sanitizeCases`, and now
    `extractPdfText`.
