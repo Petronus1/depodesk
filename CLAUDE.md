@@ -116,6 +116,14 @@ Auth. Deployed on Vercel (auto-deploys from `main` on GitHub:
   it into the Supabase SQL Editor and reports results. Make migrations
   idempotent; include a verification `select` at the end. Update
   `depodesk-schema.sql` to match afterward.
+- Tests: `npm test` (Vitest, `src/**/*.test.js`). Covers the pure logic that
+  is easy to get wrong and hard to eyeball: the exhibit-list filter guards
+  (an unmarked exhibit has `label === null` — an unguarded `.toLowerCase()`
+  there once white-screened the app), case-wide exhibit numbering,
+  `sanitizeCases`, `highlightSnippet`, `isUuid`, and the searchable/
+  not-searchable decision in `normalizeExtractedText`. Browser-only code
+  (pdfjs parsing, realtime, RLS) is NOT covered — those still need a real
+  browser, and Safari specifically.
 - Dev server: `npm run dev` (port 5173, `.claude/launch.json` exists).
   Participant flows (join/witness/etc.) are testable without attorney
   credentials; the attorney app is behind Ryan's login — hand him the

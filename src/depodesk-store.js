@@ -38,6 +38,51 @@ export function sanitizeCases(cases) {
   }));
 }
 
+// ─── Exhibit helpers (pure — unit tested in depodesk-store.test.js) ──────────
+
+/**
+ * Does an exhibit match the exhibit-list search box (name / label / tags)?
+ *
+ * Every field is guarded on purpose: an UNMARKED exhibit has `label === null`
+ * (a number is only assigned at mark time), and OC-ingested or older exhibits
+ * may have no `tags`. An unguarded `.toLowerCase()` here previously crashed
+ * the whole app as soon as anything was typed.
+ */
+export function matchesExhibitQuery(exhibit, query) {
+  const q = (query || "").toLowerCase();
+  if (!q) return true;
+  const e = exhibit || {};
+  return (e.name  || "").toLowerCase().includes(q)
+      || (e.label || "").toLowerCase().includes(q)
+      || (e.tags  || []).some(t => (t || "").toLowerCase().includes(q));
+}
+
+/**
+ * Next case-wide exhibit number: one past the highest already assigned
+ * anywhere in the case (library + every deposition), or 1 if none are marked.
+ * Numbering is case-wide, not per-deposition, because exhibits are reused
+ * across depositions in the same case.
+ */
+export function nextExhibitNumber(caseObj) {
+  const used = [];
+  (caseObj?.library || []).forEach(e => { if (e?.exhibitNum) used.push(e.exhibitNum); });
+  (caseObj?.depositions || []).forEach(d =>
+    (d?.exhibits || []).forEach(e => { if (e?.exhibitNum) used.push(e.exhibitNum); }));
+  return used.length > 0 ? Math.max(...used) + 1 : 1;
+}
+
+/**
+ * Exhibit numbers already in use in this case, excluding one exhibit
+ * (used to warn before a manual renumber collides).
+ */
+export function usedExhibitNumbers(caseObj, exceptId) {
+  const used = [];
+  const collect = e => { if (e?.id !== exceptId && e?.exhibitNum) used.push(e.exhibitNum); };
+  (caseObj?.library || []).forEach(collect);
+  (caseObj?.depositions || []).forEach(d => (d?.exhibits || []).forEach(collect));
+  return used;
+}
+
 // ─── Seed Data ───────────────────────────────────────────────────────────────
 export const SEED_CASES = [
   {

@@ -522,7 +522,10 @@ export async function startSessionWithPin(caseId, _depositionId) {
  * exhibit_id is a uuid FK — the app's local numeric exhibit ids must
  * not be written there (they fail the insert); pass names/nums instead.
  */
-const isUuid = v => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+// Exported for unit tests: session_events.exhibit_id is a uuid FK, and the
+// attorney app's local exhibit ids are numbers (Date.now()). Writing one
+// would fail the insert and lose the audit event, so it's nulled instead.
+export const isUuid = v => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 export async function logSessionEvent(sessionId, eventType, fields = {}) {
   try {

@@ -47,6 +47,26 @@ async function readPageTextItems(page) {
   return items;
 }
 
+/**
+ * Turn per-page text into the stored record. Split out from the pdfjs call
+ * so the "is this actually searchable?" decision is unit-testable without a
+ * browser (see depodesk-fulltext.test.js) — pdfjs itself only runs in one.
+ *
+ * @param pages     array of per-page strings
+ * @param pageCount number of pages in the document
+ */
+export function normalizeExtractedText(pages, pageCount) {
+  // Collapse runs of whitespace; pdfjs emits a lot of positional gaps.
+  const content = (pages || []).join("\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return {
+    content,
+    pageCount,
+    // A scan has no text layer; a stray page number or OCR artifact
+    // shouldn't make a document look searchable.
+    hasText: content.length >= MIN_CHARS_PER_PAGE * Math.max(1, pageCount),
+  };
+}
+
 export async function extractPdfText(source) {
   const data = source instanceof ArrayBuffer ? new Uint8Array(source) : source;
   const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -56,13 +76,7 @@ export async function extractPdfText(source) {
     const items = await readPageTextItems(page);
     pages.push(items.map(it => it.str).join(" "));
   }
-  // Collapse runs of whitespace; pdfjs emits a lot of positional gaps.
-  const content = pages.join("\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-  return {
-    content,
-    pageCount: pdf.numPages,
-    hasText: content.length >= MIN_CHARS_PER_PAGE * Math.max(1, pdf.numPages),
-  };
+  return normalizeExtractedText(pages, pdf.numPages);
 }
 
 /**

@@ -7,7 +7,7 @@ import PDFViewer from "./depodesk-pdfviewer"
 import { stampPdf, flattenMarkup } from "./depodesk-stamp"
 import { AnnotationLayer, AnnotationToolbar } from "./depodesk-annotations"
 import { CasesPanel, DepositionsPanel, ImportSelector } from "./depodesk-panels"
-import { STORAGE_KEY, ANN_KEY, META_KEY, SESSION_KEY, storageGet, storageSet, storageDel, sanitizeCases, SEED_CASES } from "./depodesk-store"
+import { STORAGE_KEY, ANN_KEY, META_KEY, SESSION_KEY, storageGet, storageSet, storageDel, sanitizeCases, SEED_CASES, matchesExhibitQuery, nextExhibitNumber, usedExhibitNumbers } from "./depodesk-store"
 import { indexExhibitText, searchExhibitText, getUnsearchableExhibits } from "./depodesk-fulltext"
 import SearchResults from "./depodesk-search"
 
@@ -145,16 +145,7 @@ export default function App() {
   // (share / drive pages / start witness markup) until reclaiming it.
   const ocHasControl = activeSession?.controller_role === "opposing_counsel";
 
-  // Guard every field: an UNMARKED exhibit has label === null (a number is
-  // only assigned at mark time), and OC-ingested / older exhibits may lack
-  // tags. Calling .toLowerCase() on those crashed the whole app as soon as
-  // anything was typed here.
-  const q = search.toLowerCase();
-  const filtered = exhibits.filter(e =>
-    (e.name  || "").toLowerCase().includes(q) ||
-    (e.label || "").toLowerCase().includes(q) ||
-    (e.tags  || []).some(t => (t || "").toLowerCase().includes(q))
-  );
+  const filtered = exhibits.filter(e => matchesExhibitQuery(e, search));
 
   // ── Case-wide content search (full-text over uploaded PDFs) ──────
   // Map a search hit's storage_path back to where the exhibit lives
@@ -663,12 +654,8 @@ async function shareExhibit(id) {
     setMarkingId(id);
     try {
 
-    // Find the next available case-wide exhibit number
-    const allMarked = [];
-    const c = activeCase;
-    (c?.library || []).forEach(e => { if (e.exhibitNum) allMarked.push(e.exhibitNum); });
-    (c?.depositions || []).forEach(d => d.exhibits.forEach(e => { if (e.exhibitNum) allMarked.push(e.exhibitNum); }));
-    const nextNum = allMarked.length > 0 ? Math.max(...allMarked) + 1 : 1;
+    // Next available case-wide exhibit number (see depodesk-store.js)
+    const nextNum = nextExhibitNumber(activeCase);
     const label = `Exhibit ${nextNum}`;
 
     // Mark in current deposition/library and assign number
@@ -773,9 +760,7 @@ async function shareExhibit(id) {
     if (newNum === ex.exhibitNum) { setEditingNum(false); return; } // no change
 
     // Warn (but allow) if another marked exhibit in this case already uses it
-    const used = [];
-    (activeCase?.library || []).forEach(e => { if (e.id !== id && e.exhibitNum) used.push(e.exhibitNum); });
-    (activeCase?.depositions || []).forEach(d => d.exhibits.forEach(e => { if (e.id !== id && e.exhibitNum) used.push(e.exhibitNum); }));
+    const used = usedExhibitNumbers(activeCase, id);
     if (used.includes(newNum) && !confirm(`Exhibit ${newNum} already exists in this case. Use this number anyway?`)) return;
 
     setEditingNum(false); // all checks passed — commit to the renumber
