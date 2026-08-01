@@ -145,10 +145,15 @@ export default function App() {
   // (share / drive pages / start witness markup) until reclaiming it.
   const ocHasControl = activeSession?.controller_role === "opposing_counsel";
 
+  // Guard every field: an UNMARKED exhibit has label === null (a number is
+  // only assigned at mark time), and OC-ingested / older exhibits may lack
+  // tags. Calling .toLowerCase() on those crashed the whole app as soon as
+  // anything was typed here.
+  const q = search.toLowerCase();
   const filtered = exhibits.filter(e =>
-    e.name.toLowerCase().includes(search.toLowerCase()) ||
-    e.label.toLowerCase().includes(search.toLowerCase()) ||
-    e.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))
+    (e.name  || "").toLowerCase().includes(q) ||
+    (e.label || "").toLowerCase().includes(q) ||
+    (e.tags  || []).some(t => (t || "").toLowerCase().includes(q))
   );
 
   // ── Case-wide content search (full-text over uploaded PDFs) ──────
