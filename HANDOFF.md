@@ -2,26 +2,60 @@
 
 _Last updated: 2026-07-27._
 
-**Repo state:** `origin/main` is at **`8e2c50a`**. Everything below is committed,
+**Repo state:** `origin/main` is at **`6a606ad`**. Everything below is committed,
 pushed, and (where noted) live in Supabase. Working tree clean, nothing unpushed.
 
 Pick up elsewhere: `git pull`, then jump to **Next up**.
+
+**Run the tests first:** `npm test` (42 tests, Vitest). If they're green, the pure
+logic is sound and any problem is in browser-only territory — realtime, RLS, pdfjs,
+or the UI.
 
 ---
 
 ## Next up (start here)
 
-**Content search is validated and working — pick any open item below.** The most
-valuable is probably **tests** (see Open items), since the crash found during this
-validation was a pre-existing null-guard bug that every round of manual testing had
-missed. It would have been a two-line unit test.
+**Nothing is half-finished — pick any open item below.** Content search is validated
+and there's now a test suite. The biggest remaining piece is the **session/sharing
+extraction** (Open items #3); the smaller ones are listed there too.
 
-Two small things never exercised, if you want to close them out first:
+Two small paths never exercised, if you want to close them out first:
 - **Unsearchable-case copy** — open Contents mode on a case that has *never* synced
   (no session started, no file attached). Should read "This case isn't searchable yet",
   never "No matches". (Logic verified by direct render, not in the live app.)
 - **Backfill Stop** — the cancel path. The 8-exhibit backfill ran to completion, so
   Stop mid-run was never clicked.
+
+**When you add tests**, one lesson worth repeating: the first regression test written
+for the `label === null` crash *passed against the buggy code*. The query used
+(`"business"`) matched the exhibit's **name**, which short-circuits before `label` is
+read — the real crash needs a term that does NOT match the name. It was only caught by
+deliberately reverting the fix to confirm the test failed. **A test you haven't watched
+fail isn't yet a test.**
+
+---
+
+## Test suite (`6a606ad`, 2026-07-27)
+
+`npm test` — Vitest, 42 tests, ~0.5s. Chosen for consequence, not coverage %:
+the exhibit-list filter guards (the crash below), case-wide exhibit numbering
+(never reuses a gap — an old number may already be in a transcript), `isUuid`
+(rejects the app's numeric / `oc-` / `-stamped` ids that would fail the
+`session_events` FK and silently lose an audit event), `sanitizeCases`,
+`highlightSnippet`, and the searchable/not-searchable decision in
+`normalizeExtractedText` (scans and stray OCR artifacts must read as NOT
+searchable).
+
+To make that logic testable, three pieces moved out of `depo-exhibit-app.jsx`
+into pure functions in `depodesk-store.js` (`matchesExhibitQuery`,
+`nextExhibitNumber`, `usedExhibitNumbers`), and `normalizeExtractedText` was
+split out of `extractPdfText`. Behaviour-preserving; re-verified in the live app.
+
+**Deliberately not unit-tested: `extractPdfText` itself.** pdfjs is
+browser-targeted (needs DOMMatrix, a worker), and — the real reason — a Node test
+would *not* have caught the Safari `ReadableStream` bug, because Node's support
+differs. That class of bug only surfaces in the real browser. Don't add a Node
+pdfjs test expecting it to protect you there.
 
 ---
 
@@ -115,14 +149,16 @@ layer), `depodesk-panels.jsx` (CasesPanel/DepositionsPanel/ImportSelector),
 1. ~~**Search UI + backfill**~~ ✅ built (`90f79dd`), review-fixed (`a7ad8d5`),
    validated against real data 2026-07-27. Only the two small paths in *Next up*
    remain unexercised.
-2. **Tests** — none exist, and this session showed the cost: the `label === null`
-   crash was pre-existing, reachable by typing one character, and survived every
-   round of manual testing because seed data always has labels. Highest value:
-   the exhibit-list filter guards, exhibit numbering (concurrency guard + renumber),
-   `isUuid` in `logSessionEvent`, `sanitizeCases`, `extractPdfText`.
-3. **Session/sharing extraction** — the deferred half of the split. Deeply coupled to
-   exhibit/case state (95 refs; `shareExhibit` alone reads 8 App-local things), so it
-   needs a real state-lift and a live two-party test, not a tack-on.
+2. ~~**Tests**~~ ✅ Vitest suite added (`6a606ad`) — see the section below. Worth
+   extending as new pure logic appears; the obvious remaining gap is the
+   *stateful* paths that still live inside the component (marking's concurrency
+   guard, renumber's re-stamp-then-commit ordering). Those need either a
+   state-lift (see #3) or component tests with a DOM environment.
+3. **Session/sharing extraction** — the deferred half of the split, and now the
+   biggest single item. Deeply coupled to exhibit/case state (95 refs;
+   `shareExhibit` alone reads 8 App-local things), so it needs a real state-lift
+   and a live two-party test, not a tack-on. Doing it would also make the
+   stateful logic in #2 testable.
 
 **Smaller:**
 - Renumber's duplicate-number check uses a native `confirm()`; a modal would be nicer.
@@ -158,7 +194,7 @@ layer), `depodesk-panels.jsx` (CasesPanel/DepositionsPanel/ImportSelector),
 
 ## Quick reference
 - Repo: `github.com/Petronus1/depodesk` · branch `main`
-- Run: `npm run dev` · `npm run lint` (oxlint) · `npm run build`
+- Run: `npm run dev` · `npm test` (Vitest) · `npm run lint` (oxlint) · `npm run build`
 - Supabase project `jxpsqttphsccbigeppfg` — migrations in `src/*-migration.sql`, run
   in the SQL Editor (idempotent). Storage deletes go through the Dashboard/API, not SQL.
 - Architecture + security model: `CLAUDE.md`. Older findings: `CODE_REVIEW.md`.
