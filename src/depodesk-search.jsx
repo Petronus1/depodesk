@@ -39,6 +39,8 @@ export default function SearchResults({
   unsearchableCount = 0,     // indexed scans with no text layer
   backfill,                  // null | { pending, running, done, total }
   onBackfill,                // () => void
+  onCancelBackfill,          // () => void
+  searchable = true,         // false when this case has never synced to Supabase
 }) {
   const wrap = { overflowY: "auto", flex: 1 };
   const muted = (text) => (
@@ -46,8 +48,14 @@ export default function SearchResults({
   );
 
   const pendingBanner = backfill?.running ? (
-    <div style={{ padding: "8px 12px", fontSize: 11, color: MUTED, borderBottom: `1px solid ${BORDER}` }}>
-      Indexing older exhibits… {backfill.done}/{backfill.total}
+    <div style={{ padding: "8px 12px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 11, color: MUTED, flex: 1 }}>
+        Indexing older exhibits… {backfill.done}/{backfill.total}
+      </span>
+      <button onClick={onCancelBackfill} style={{
+        background: "transparent", border: `1px solid ${BORDER}`, color: MUTED, borderRadius: 4,
+        padding: "2px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+      }}>Stop</button>
     </div>
   ) : backfill?.pending > 0 ? (
     <div style={{ padding: "8px 12px", borderBottom: `1px solid ${BORDER}` }}>
@@ -63,7 +71,19 @@ export default function SearchResults({
   ) : null;
 
   let body;
-  if (loading) {
+  if (!searchable) {
+    // Never say "no matches" when no search actually ran — a false
+    // negative here would read as "this document isn't in the case."
+    body = (
+      <div style={{ padding: "20px 12px", textAlign: "center", fontSize: 12, lineHeight: 1.6 }}>
+        <div style={{ color: GOLD, fontWeight: 600, marginBottom: 4 }}>This case isn’t searchable yet</div>
+        <div style={{ color: "#2A3F58" }}>
+          Its documents haven’t been uploaded to the server, so there’s nothing to search.
+          Attach a file or start a session to sync this case, then index it here.
+        </div>
+      </div>
+    );
+  } else if (loading) {
     body = muted("Searching…");
   } else if (!query.trim()) {
     body = muted(<>Search the full text of every<br />uploaded exhibit in this case.</>);

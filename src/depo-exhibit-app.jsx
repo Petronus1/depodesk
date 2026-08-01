@@ -130,6 +130,7 @@ export default function App() {
   const fileInputRef   = useRef();
   const attachInputRef = useRef();
   const markingRef = useRef(false);                 // synchronous re-entrancy guard for markExhibit
+  const backfillCancelRef = useRef(false);          // set true to stop an in-flight search backfill
   const [markingId, setMarkingId] = useState(null); // exhibit id currently being marked (drives button state)
   const [editingNum, setEditingNum] = useState(false); // inline exhibit-number override editor open?
   const [editNumValue, setEditNumValue] = useState(""); // its input value
@@ -209,6 +210,8 @@ export default function App() {
 
   // On entering contents mode (or switching case), tally scanned exhibits
   // (no text layer) and how many older uploads still need indexing.
+  // Depends on remoteId too: a case gains one the first time it syncs
+  // (attach/session), and the tally must refresh when that happens.
   useEffect(() => {
     if (searchMode !== "contents") { setBackfill(null); return; }
     const remoteCaseId = activeCase?.remoteId;
@@ -225,7 +228,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [searchMode, activeCaseId]);
+  }, [searchMode, activeCaseId, activeCase?.remoteId]);
 
   async function runBackfill() {
     const remoteCaseId = activeCase?.remoteId;
@@ -234,24 +237,36 @@ export default function App() {
     const indexed = new Set((data || []).map(r => r.storage_path));
     const targets = pdfExhibitsNeedingIndex(indexed);
     if (targets.length === 0) { setBackfill(null); return; }
+    backfillCancelRef.current = false;
     setBackfill({ pending: targets.length, running: true, done: 0, total: targets.length });
+    let done = 0;
     for (let i = 0; i < targets.length; i++) {
+      if (backfillCancelRef.current) break;   // user asked to stop
       try {
         const url = await getExhibitFileUrl(targets[i].path);
         await indexExhibitText(remoteCaseId, targets[i].path, targets[i].name, url);
       } catch (err) { console.error("Backfill index failed for", targets[i].path, err); }
-      setBackfill(b => (b ? { ...b, done: i + 1 } : b));
+      done = i + 1;
+      setBackfill(b => (b ? { ...b, done } : b));
     }
-    setBackfill(null);
+    const stopped = backfillCancelRef.current;
+    backfillCancelRef.current = false;
+    // Re-tally: whatever got indexed is now searchable; anything left
+    // still shows a pending count so the user can resume.
     const unsearch = await getUnsearchableExhibits(remoteCaseId);
     setUnsearchableCount(unsearch.length);
+    const { data: after } = await supabase.from("exhibit_text").select("storage_path").eq("case_id", remoteCaseId);
+    const stillPending = pdfExhibitsNeedingIndex(new Set((after || []).map(r => r.storage_path))).length;
+    setBackfill(stillPending > 0 ? { pending: stillPending, running: false, done: 0, total: 0 } : null);
     if (search.trim()) {
       setContentLoading(true);
       const hits = await searchExhibitText(remoteCaseId, search.trim());
       setContentResults(hits); setContentLoading(false);
     }
-    notify("Older exhibits indexed for search", "#4CAF82");
+    notify(stopped ? `Stopped — ${done} indexed` : "Older exhibits indexed for search", stopped ? "#C9A84C" : "#4CAF82");
   }
+
+  function cancelBackfill() { backfillCancelRef.current = true; }
 
   // Witness
   const [witnessExhibit, setWitnessExhibit] = useState(null);
@@ -1208,7 +1223,9 @@ async function shareExhibit(id) {
           </div>
           <div style={{ padding: "0 12px 6px", fontSize: 10, color: "#4A6080", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px" }}>
             {searchMode === "contents"
-              ? (search.trim() ? `${enrichedResults.length} match${enrichedResults.length !== 1 ? "es" : ""}` : "Full-text search")
+              ? (!activeCase?.remoteId ? "Not searchable"
+                 : search.trim() ? `${enrichedResults.length} match${enrichedResults.length !== 1 ? "es" : ""}`
+                 : "Full-text search")
               : `${filtered.length} exhibit${filtered.length !== 1 ? "s" : ""}`}
           </div>
           {searchMode === "contents" ? (
@@ -1220,6 +1237,8 @@ async function shareExhibit(id) {
               unsearchableCount={unsearchableCount}
               backfill={backfill}
               onBackfill={runBackfill}
+              onCancelBackfill={cancelBackfill}
+              searchable={!!activeCase?.remoteId}
             />
           ) : (
           <div style={{ overflowY: "auto", flex: 1 }}>
